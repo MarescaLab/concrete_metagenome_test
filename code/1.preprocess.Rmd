@@ -1,0 +1,116 @@
+---
+title: "pre-process"
+author: "Anders Kiledal"
+date: "10/13/2020"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_knit$set(root.dir = here::here())
+```
+
+This document lays out the processing of shotgun metagenomic data from a concrete sample (S3 fallen) collected from an ASR affected brige in Northern New Jersey. A negative control sample was also submitted for sequencing, but it failed to generate a signal.
+
+Several dependencies are required:
+
+  -   fastqc used to assess reads pre- and post-processing
+  -   trim-galore! to QC the reads and remove any adapters
+  -   bbmap, specifically for bbmerge, used to join paired end reads
+  -   metaphlan3, used to taxonomically profile the data
+
+Install dependencies
+```{bash}
+conda create --name mpa -c bioconda metaphlan bbmap fastqc cutadapt trim-galore
+```
+
+
+
+Assess read quality
+```{bash}
+source ~/miniconda2/bin/activate mpa
+
+cd data/raw_sequence_files
+
+mkdir fastqc_reports
+
+fastqc -o fastqc_reports -t 4 *.fastq.gz
+```
+Process reads with trim-galore
+```{bash}
+source ~/miniconda2/bin/activate mpa
+
+cd data/raw_sequence_files
+
+trim_galore --paired -o ../qc_sequence_files *.fastq.gz
+```
+Re-assess read quality
+```{bash}
+source ~/miniconda2/bin/activate mpa
+
+cd data/qc_sequence_files
+
+mkdir fastqc_reports
+
+fastqc -o fastqc_reports -t 4 *.fq.gz
+```
+
+Merge paired end reads
+```{r}
+library(tidyverse)
+
+system("wsl ~/miniconda2/bin/activate mpa; which bbmerge.sh")
+
+bbmerge_path <- "/home/eandersk/miniconda2/envs/mpa/bin/bbmerge.sh"
+
+system(paste("wsl",bbmerge_path,"--version"))
+
+if ((grep("Windows", osVersion, ignore.case = TRUE))) { #Run on windows subsystem for linux if OS is windows
+  bbmerge_path <- paste("wsl",bbmerge_path)
+}
+
+fqs <- list.files("data/qc_sequence_files/",pattern = "*.fq.gz")
+
+samples <- fqs %>% str_remove("_S[0-9]_R[0-9]_.*") %>% unique()
+
+files <- data.frame(sample = samples) %>% 
+  mutate(forward = paste0("data/qc_sequence_files/",sample,"_S1_R1_001_val_1.fq.gz"),
+         reverse = paste0("data/qc_sequence_files/",sample,"_S1_R2_001_val_2.fq.gz"))
+
+for (i in 1:length(files)){
+  system(paste0(bbmerge_path,
+                " in1=", files$forward[i],
+                " in2=", files$reverse[i], 
+                " out=", files$sample[i], ".fastq.gz" ,
+                " outu1=", files$sample[i], "_F_unmerged.fastq.gz", 
+                " outu2=", files$sample[i], "_R_unmerged.fastq.gz"))
+}
+
+```
+
+Run metaphlan
+```{bash}
+source ~/miniconda2/bin/activate mpa
+
+mkdir data/metaphlan
+
+metaphlan data/qc_sequence_files/S3_Fallen_S1_R1_001_val_1.fq,data/qc_sequence_files/S3_Fallen_S1_R2_001_val_2.fq \
+  --bowtie2db ~/metaphlan_db \
+  --bowtie2out data/metaphlan/metagenome.bowtie2.bz2 \
+  --nproc 4 \
+  --input_type fastq \
+  -o data/metaphlan/S3_fallen_metaphlan.txt
+
+```
+
+
+```{bash}
+source ~/miniconda2/bin/activate mpa
+
+merge_metaphlan_tables.py data/metaphlan/S3_fallen_metaphlan.txt > data/metaphlan/table.tsv
+
+```
+
+
+
+
+
