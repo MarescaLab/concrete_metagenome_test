@@ -237,7 +237,8 @@ library(viridis)
 
 table <- read_tsv("data/shi7_out/shogun_output/taxatable.strain.ra.txt") %>% 
   mutate(S3_fallen = (S3Fallen.S1.R1.R1 + S3Fallen.S1.R1.R2) / 2 ) %>% 
-  select(lineage = "#OTU ID",S3_fallen)
+  select(lineage = "#OTU ID",S3_fallen) %>% 
+  write_tsv("data/shi7_out/shogun_output/rel_abund.txt") #write the table w/ F & R summarized into one sample
 
 met_samples <- data.frame(sample_id = "S3_fallen", Type = "Concrete")
 
