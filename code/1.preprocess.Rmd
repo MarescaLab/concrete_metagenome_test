@@ -166,6 +166,7 @@ echo "Duration: $((($(date +%s)-$start)/60)) minutes"
 ENDSSH
 ```
 Use diamond to convert .daa fiels to .m8 files
+  --Update 10/20--this is apparently the old way of doing things, and it is now preferred to use the .daa files directly with the "meganize" funtion, and then open the .daa files with MEGAN.
 ```{bash}
 date
 ssh akiledal@biomix.dbi.udel.edu "sbatch" <<'ENDSSH'
@@ -194,18 +195,6 @@ done
 ###Script ends here###
 echo "Duration: $((($(date +%s)-$start)/60)) minutes"
 ENDSSH
-```
-
-Then use the MEGAN GUI to import the .m8 files and determine the taxonomic content. The MEGAN database must also be downloaded.
-
-MEGAN from command line
-```{bash}
-import blastFile='/work/akiledal/diamond/BM_S3_Fallen_S1_R1_001_val_1.m8', '/work/akiledal/diamond/BM_S3_Fallen_S1_R2_001_val_2.m8' meganFile='/work/akiledal/diamond/BM_S3_Fallen_S1_R1.rma6' useCompression=true format=BlastTab mode=BlastX maxMatches=100 minScore=50.0 maxExpected=0.01 minPercentIdentity=0.0 topPercent=10.0 minSupportPercent=0.05 minSupport=1 lcaAlgorithm=naive minPercentReadToCover=0.0 minPercentReferenceToCover=0.0 minComplexity=0.0 useIdentityFilter=false readAssignmentMode=readCount fNames=EGGNOG INTERPRO2GO SEED;
-quit;
-```
-
-```{bash}
-meganize daaFile='/work/akiledal/diamond/BM_S3_Fallen_S1_R1_001_val_1.daa', '/work/akiledal/diamond/BM_S3_Fallen_S1_R2_001_val_2.daa' minScore=50.0 maxExpected=0.01 minPercentIdentity=0.0 topPercent=10.0 minSupportPercent=0.05 minSupport=1 lcaAlgorithm=naive minComplexity=0.0 useIdentityFilter=false readAssignmentMode=readCount fNames=EGGNOG INTERPRO2GO SEED longReads=false paired=false;
 ```
 
 
