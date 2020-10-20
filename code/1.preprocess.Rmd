@@ -196,14 +196,89 @@ echo "Duration: $((($(date +%s)-$start)/60)) minutes"
 ENDSSH
 ```
 
+Then use the MEGAN GUI to import the .m8 files and determine the taxonomic content. The MEGAN database must also be downloaded.
+
+MEGAN from command line
+```{bash}
+import blastFile='/work/akiledal/diamond/BM_S3_Fallen_S1_R1_001_val_1.m8', '/work/akiledal/diamond/BM_S3_Fallen_S1_R2_001_val_2.m8' meganFile='/work/akiledal/diamond/BM_S3_Fallen_S1_R1.rma6' useCompression=true format=BlastTab mode=BlastX maxMatches=100 minScore=50.0 maxExpected=0.01 minPercentIdentity=0.0 topPercent=10.0 minSupportPercent=0.05 minSupport=1 lcaAlgorithm=naive minPercentReadToCover=0.0 minPercentReferenceToCover=0.0 minComplexity=0.0 useIdentityFilter=false readAssignmentMode=readCount fNames=EGGNOG INTERPRO2GO SEED;
+quit;
+```
+
+```{bash}
+meganize daaFile='/work/akiledal/diamond/BM_S3_Fallen_S1_R1_001_val_1.daa', '/work/akiledal/diamond/BM_S3_Fallen_S1_R2_001_val_2.daa' minScore=50.0 maxExpected=0.01 minPercentIdentity=0.0 topPercent=10.0 minSupportPercent=0.05 minSupport=1 lcaAlgorithm=naive minComplexity=0.0 useIdentityFilter=false readAssignmentMode=readCount fNames=EGGNOG INTERPRO2GO SEED longReads=false paired=false;
+```
 
 
-BM_samples="BM_003_S1_L001_R1_001 BM_003_S1_L001_R2_001"
 
-for s in ${BM_samples}
-do
-    ./diamond view -a ${s}.daa -o ${s}.m8
-done
+Plot metacodeR of results
+```{r}
+library(biomformat)
+library(tidyverse)
+library(qiime2R)
+library(readr)
+library(metacoder)
+library(viridis)
+
+test <- read_tsv("data/megan/BM_S3_Fallen_S1_R1_001_val_1-ex.txt",col_names = F) %>% 
+  rename(percent_abund = "X2") %>% 
+  mutate(tax = row_number()) %>% 
+  separate(col = X1,sep = ";",into = c("Root","Cellular","Kingdom","Phylum","Class","Order","Family","Genus","Species","Strain","A","B","C","D","E","F","G","H","I","J","K","L","M","N","O","P")) %>% 
+  pivot_longer(-c(percent_abund,tax),names_to = "tax_levels",values_to = "taxa") %>% 
+  mutate(new_tax_label = paste0(tax_levels,"__",taxa)) %>% 
+  filter(!is.na(taxa),taxa != "", taxa != "NA") %>% 
+  select(-taxa) %>% 
+  spread("tax_levels","new_tax_label",fill = NA) %>% 
+  unite(lineage, c("Root","Cellular","Kingdom","Phylum","Class","Order","Family","Genus","Species","Strain","A","B","C","D","E","F","G","H","I","J","K","L","M","N","O","P"),sep = ";",na.rm = TRUE) %>% select(-tax) %>% 
+  rename(S3_fallen = "percent_abund") %>% 
+  #filter(str_detect(lineage,"Bacteria")) %>% 
+  mutate(lineage = str_remove(lineage,"Root__NCBI;Cellular__cellular organisms;"))
+  #mutate(lineage = str_remove(lineage,"Root__NCBI;Cellular__Viruses;"))
+
+
+met_samples <- data.frame(sample_id = "S3_fallen", Type = "Concrete")
+
+#Make the MetaCodeR obj
+  ##Greengenes class_regex = "^(.+)__(.*)$"
+  ##SILVA class_regex = "^D_(.+)__(.*)$"  
+
+
+obj <- parse_tax_data(test, class_cols = "lineage", class_sep = ";",
+                      class_regex = "^(.+)__(.*)$",
+                      class_key = c("tax_rank" = "taxon_rank", "name" = "taxon_name"))
+
+
+## Calculate relative abundance
+obj$data$rel_abd <- calc_obs_props(obj, "tax_data", other_cols = T)
+
+#summing per-taxon counts
+obj$data$tax_abund <- calc_taxon_abund(obj, "rel_abd",
+                                       cols = met_samples$sample_id,
+                                       groups = met_samples$Type)
+
+#To get in final relative abundance form
+obj$data$tax_abund$Concrete <- obj$data$tax_abund$Concrete / obj$data$tax_abund$Concrete[1]
+
+#Make the heat tree
+obj %>%
+taxa::filter_taxa(Concrete > 0.0001, taxon_ranks == "Species", supertaxa = TRUE) %>%
+heat_tree(node_label = taxon_names,
+          node_size = Concrete,
+          node_size_trans = "area",
+          node_size_range = c(0.002,0.05),
+          node_label_size_range = c(.015,.025),
+          node_size_axis_label = "OTU count",
+          initial_layout = "reingold-tilford", 
+          layout = "davidson-harel",
+          #layout = "automatic",
+          overlap_avoidance = 5,
+          repel_force = 10,
+          node_label_max = 50 ,
+          node_color = Concrete,
+          node_color_range = c("gray80","gray80","gray80"),
+          node_color_axis_label = "Relative abundance") +
+          ggsave("data/shi7_out/shogun_output/MEGAN_metacodeR.pdf", device = cairo_pdf, units = "in", height = 12, width = 12, dpi = 300) +
+          ggsave("data/shi7_out/shogun_output/MEGAN_metacodeR.png", type = "cairo", units = "in", dpi = 300, height = 12, width = 12)
+```
 
 
 
@@ -211,6 +286,46 @@ done
 ## Shogun
 
 ### Pre-process with Shi7
+```{bash}
+date
+ssh akiledal@biomix.dbi.udel.edu "sbatch" <<'ENDSSH'
+#!/bin/bash
+#SBATCH --job-name=shi7
+#SBATCH --chdir=/work/akiledal/metagenomics_trial/
+#SBATCH --mem=800G
+#SBATCH -c 48
+#SBATCH --mail-type=ALL
+#SBATCH --mail-user=akiledal@udel.edu
+#SBATCH --time=20-0
+
+source ~/.bashrc
+
+date
+hostname
+start=`date +%s`
+
+###Script starts here###
+
+conda activate shi7
+
+mkdir shi7_out/input_files/
+
+cp S3_Fallen/*.fastq.gz shi7_out/input_files/
+
+gunzip shi7_out/input_files/*.fastq.gz
+
+shi7 -i shi7_out/input_files/ -o shi7_out --adaptor Nextera --flash False --filter_length 50 -m 0
+
+rm -rf shi7_out/input_files/
+
+###Script ends here###
+echo "Duration: $((($(date +%s)-$start)/60)) minutes"
+ENDSSH
+```
+
+
+
+
 
 Despite claims to the contrary online, it seems to not handle fastq.gz, so files were manually gunzipped beforehand.
 
@@ -219,14 +334,88 @@ shi7 -i for_shi7/ -o shi7_out --adaptor Nextera --flash False --filter_length 50
 ```
 
 
-Run the Shogun pipeline using bowtie2
+
+### Run the Shogun pipeline using bowtie2
 ```{bash}
 shogun pipeline -i combined_seqs.fna -d /work/akiledal/shogun/ -o shogun_output -a bowtie2
 ```
 
 
+### Run the Shogun pipeline using bowtie2
+```{bash}
+shogun pipeline -i combined_seqs.fna -d /work/akiledal/shogun/ -o shogun_output_burst -a burst
+```
 
-Plot metacodeR of the Shogun results
+### Run the Shogun BURST alignment
+
+```{bash}
+date
+ssh akiledal@biomix.dbi.udel.edu "sbatch" <<'ENDSSH'
+#!/bin/bash
+#SBATCH --job-name=BURST_align
+#SBATCH --chdir=/work/akiledal/metagenomics_trial/shi7_out
+#SBATCH --mem=800G
+#SBATCH -c 48
+#SBATCH --mail-type=ALL
+#SBATCH --mail-user=akiledal@udel.edu
+#SBATCH --time=20-0
+
+source ~/.bashrc
+
+date
+hostname
+start=`date +%s`
+
+###Script starts here###
+
+conda activate qiime2-2020.2
+
+shogun align -a burst -i combined_seqs.fna -d /work/akiledal/shogun/ -o shogun_burst_align -t 20
+
+###Script ends here###
+echo "Duration: $((($(date +%s)-$start)/60)) minutes"
+ENDSSH
+```
+### Assign taxonomy
+```{bash}
+date
+ssh akiledal@biomix.dbi.udel.edu "sbatch" <<'ENDSSH'
+#!/bin/bash
+#SBATCH --job-name=shogun_burst_tax
+#SBATCH --chdir=/work/akiledal/metagenomics_trial/shi7_out
+#SBATCH --mem=800G
+#SBATCH -c 48
+#SBATCH --mail-type=ALL
+#SBATCH --mail-user=akiledal@udel.edu
+#SBATCH --time=20-0
+
+source ~/.bashrc
+
+date
+hostname
+start=`date +%s`
+
+###Script starts here###
+
+conda activate qiime2-2020.2
+
+shogun assign_taxonomy -a burst -i shogun_burst_align/alignment.burst.b6 -d /work/akiledal/shogun/ -o shogun_burst_tax
+
+shogun normalize -i shogun_burst_tax -o shogun_burst_norm_tax
+
+shogun coverage -i shogun_burst_align/alignment.burst.b6 -d /work/akiledal/shogun/ -o shogun_burst_coverage.txt
+
+shogun functional -i shogun_burst_tax -d /work/akiledal/shogun/ -o shogun_burst_function
+
+###Script ends here###
+echo "Duration: $((($(date +%s)-$start)/60)) minutes"
+ENDSSH
+```
+
+
+## Interpret results
+
+Plot metacodeR of the BowTie2 Shogun results
 ```{r}
 library(biomformat)
 library(tidyverse)
@@ -286,5 +475,64 @@ heat_tree(node_label = taxon_names,
 ```
 
 
+
+Plot metacodeR of the BURST Shogun results
+```{r}
+library(biomformat)
+library(tidyverse)
+library(qiime2R)
+library(readr)
+library(metacoder)
+library(viridis)
+
+table <- read_tsv("data/shi7_out/shogun_burst/shogun_burst_tax") %>% 
+  mutate(S3_fallen = (S3.Fallen.S1.R1.001.R1 + S3.Fallen.S1.R1.001.R2) / 2 ) %>% 
+  select(lineage = "#OTU ID",S3_fallen) %>% 
+  write_tsv("data/shi7_out/shogun_output/burst_rel_abund.txt") #write the table w/ F & R summarized into one sample
+
+met_samples <- data.frame(sample_id = "S3_fallen", Type = "Concrete")
+
+
+#Make the MetaCodeR obj
+  ##Greengenes class_regex = "^(.+)__(.*)$"
+  ##SILVA class_regex = "^D_(.+)__(.*)$"  
+
+obj <- parse_tax_data(table, class_cols = "lineage", class_sep = ";",
+                      class_regex = "^(.+)__(.*)$",
+                      class_key = c("tax_rank" = "taxon_rank", "name" = "taxon_name"))
+
+
+## Calculate relative abundance
+obj$data$rel_abd <- calc_obs_props(obj, "tax_data", other_cols = T)
+
+#summing per-taxon counts
+obj$data$tax_abund <- calc_taxon_abund(obj, "rel_abd",
+                                       cols = met_samples$sample_id,
+                                       groups = met_samples$Type)
+
+#To get in final relative abundance form
+obj$data$tax_abund$Concrete <- obj$data$tax_abund$Concrete / obj$data$tax_abund$Concrete[1]
+
+#Make the heat tree
+obj %>%
+taxa::filter_taxa(Concrete > 0.01, taxon_ranks == "s", supertaxa = TRUE) %>%
+heat_tree(node_label = taxon_names,
+          node_size = Concrete,
+          node_size_trans = "area",
+          node_size_range = c(0.002,0.05),
+          node_label_size_range = c(.015,.025),
+          node_size_axis_label = "OTU count",
+          initial_layout = "reingold-tilford", 
+          layout = "davidson-harel",
+          #layout = "automatic",
+          overlap_avoidance = 5,
+          repel_force = 10,
+          node_label_max = 50 ,
+          node_color = Concrete,
+          node_color_range = c("gray80","gray80","gray80"),
+          node_color_axis_label = "Relative abundance") +
+          ggsave("data/shi7_out/shogun_output/BURST_metacodeR.pdf", device = cairo_pdf, units = "in", height = 12, width = 12, dpi = 300) +
+          ggsave("data/shi7_out/shogun_output/BURST_metacodeR.png", type = "cairo", units = "in", dpi = 300, height = 12, width = 12)
+```
 
 
