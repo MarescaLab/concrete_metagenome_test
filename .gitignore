@@ -2,6 +2,7 @@
 .Rhistory
 .RData
 .Ruserdata
+.snakemake
 *.fastq
 *.fastq.gz
 *.fq.gz
