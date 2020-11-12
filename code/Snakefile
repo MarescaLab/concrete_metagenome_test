@@ -1,0 +1,158 @@
+import os
+import re
+
+#Location of raw files
+raw_seq_folder = "raw_data"
+qc_seq_folder = "data/qc_sequence_files"
+
+#Cleanup file names and make sample list
+file_list=[f for f in sorted(os.listdir(raw_seq_folder)) if (str(f))[-9:] == ".fastq.gz"]
+read_dirs = ["R1","R2"]
+samples = []
+for file in file_list:
+    dir_and_file = raw_seq_folder + "/" + file
+    if re.search("_S[0-9]_R1_[0-9]*.fastq.gz",file) and re.sub("_S[0-9]_R1_[0-9]*.fastq.gz", "",file) not in samples:
+      samples.append(re.sub("_S[0-9]_R1_[0-9]*.fastq.gz", "",file))
+    if re.search("_R1.fastq.gz",file) and re.sub("_R1.fastq.gz", "",file) not in samples:
+      samples.append(re.sub("_R1.fastq.gz", "",file))
+    if re.search("_R1_",dir_and_file):
+       new_file = re.sub("_S[0-9]_R1_[0-9]*.fastq.gz", "_R1.fastq.gz",dir_and_file)
+       os.rename(dir_and_file,new_file)
+    if re.search("_R2_",dir_and_file):
+       new_file = re.sub("_S[0-9]_R2_[0-9]*.fastq.gz", "_R2.fastq.gz",dir_and_file)
+       os.rename(dir_and_file,new_file)
+
+rule all:
+    input:
+        #'data/assembly_metaspades/{sample}'
+        expand("{raw_folder}/fastqc_reports/{sample}_{read_dir}_fastqc.html", raw_folder=raw_seq_folder, sample=samples, read_dir=read_dirs),
+        expand("{qc_folder}/fastqc_reports/{sample}_{read_dir}_fastqc.html", qc_folder=qc_seq_folder, sample=samples, read_dir=read_dirs),
+        #expand("data/assembly_metaspades/{sample}",sample=samples)
+        #expand("data/shogun/input_fastqs/{sample}_{read_dir}.fasta", sample=samples, read_dir=read_dirs)
+        "data/shogun/combined_samples.fastq",
+        "data/qc_sequence_files/multiqc"
+
+
+rule fastqc_raw:
+    input:
+        #fastqs=expand("{raw_folder}/{sample}_{read_dir}.fastq.gz",raw_folder = raw_seq_folder, sample=samples, read_dir=read_dirs)
+        fastqs = "raw_data/{file}.fastq.gz"
+    output:
+        report = "raw_data/fastqc_reports/{file}_fastqc.html"
+        #expand("{raw_folder}/fastqc_reports/{sample}_{read_dir}_fastqc.html", raw_folder=raw_seq_folder, sample=samples, read_dir=read_dirs)
+        #"raw_data/fastqc_reports/{fastqc_report}.html"
+    conda:
+          "master_env.yaml"
+    shell:
+        """
+        mkdir -p raw_data/fastqc_reports
+        fastqc -o raw_data/fastqc_reports -t {threads} {input.fastqs}
+        """
+
+rule trim_galore:
+    input:
+        fwd_fastq="raw_data/{sample}_R1.fastq.gz",
+        rev_fastq="raw_data/{sample}_R2.fastq.gz"
+    output:
+        fastqs="data/qc_sequence_files/{sample}_{read_dir}.fastq.gz"
+    conda:
+          "master_env.yaml"
+    shell:
+        """
+        mkdir -p data/qc_sequence_files
+        trim_galore --cores {threads} --paired -o data/qc_sequence_files --basename {wildcards.sample} {input.fwd_fastq} {input.rev_fastq}
+        mv data/qc_sequence_files/{wildcards.sample}_val_1.fq.gz data/qc_sequence_files/{wildcards.sample}_R1.fastq.gz
+        mv data/qc_sequence_files/{wildcards.sample}_val_2.fq.gz data/qc_sequence_files/{wildcards.sample}_R2.fastq.gz
+        """
+rule fastqc_trimmed:
+    input:
+        fastqs="data/qc_sequence_files/{sample}_{read_dir}.fastq.gz"
+    output:
+        report = "data/qc_sequence_files/fastqc_reports/{sample}_{read_dir}_fastqc.html"
+    conda:
+          "master_env.yaml"
+    shell:
+        """
+        mkdir -p data/qc_sequence_files/fastqc_reports
+        fastqc -o data/qc_sequence_files/fastqc_reports -t {threads} {input.fastqs}
+        """
+
+rule multiqc:
+    input:
+        raw_fastqc_dir = "raw_data/fastqc_reports",
+        qc_fastqc_dir = "data/qc_sequence_files/fastqc_reports"
+    output: directory("data/qc_sequence_files/multiqc")
+    conda: "multiqc_env.yaml"
+    shell:
+        """
+        multiqc -d {input.raw_fastqc_dir} {input.qc_fastqc_dir} -o {output}
+        """
+
+rule metaspades_assemble:
+    input:
+          f_reads = "data/qc_sequence_files/{sample}_R1.fastq.gz",
+          r_reads = "data/qc_sequence_files/{sample}_R2.fastq.gz"
+    output:
+          "data/assembly_metaspades/{sample}"
+    conda:
+          "master_env.yaml"
+    shell:
+          """
+          metaspades.py -t 4 -m 8 -1 {input.f_reads} -2 {input.r_reads} -o {output}
+          """
+
+##Alternative to SHI7 using previously QCd reads:
+rule format_for_shogun:
+    input:
+        samples=expand("data/qc_sequence_files/{sample}_{read_dir}.fastq.gz", sample=samples, read_dir=read_dirs)
+    output:
+        "data/shogun/combined_samples.fastq"
+    conda: "master_env.yaml"
+    shell:
+        """
+        for i in {input};
+        do
+        s=$i
+        #s={input.samples}
+        s1=${{s##*/}}
+        filename="${{s1%.fastq.gz}}"
+
+        bioawk -c fastx -v fname="$filename" \'{{print ">"fname"_"++i" "$name"\\n"$seq}}\' $i >> {output}
+        done
+        #cat data/shogun/input_fastqs/*.fasta >> data/shogun/combined_seqs.fasta
+        """
+
+# rule shi7:
+#     input: "raw_data/{sample}_{direction}.fastq.gz"
+#     output:
+#         "data/shi7_out/combined_seqs.fna"
+#     conda:
+#         "master_env.yaml"
+#     shell:
+#         """
+#         mkdir data/shi7_out/input_files/
+#         cp {input} data/shi7_out/input_files
+#         gunzip data/shi7_out/input_files/*.fastq.gz
+#
+#         shi7 -i data/shi7_out/input_files/ -o data/shi7_out --adaptor Nextera --flash False --filter_length 50 -m 0
+#
+#         rm -rf data/shi7_out/input_files/
+#         """
+
+rule shogun_bt2: ###Need to get database setup
+    input: "data/shi7_out/combined_seqs.fna"
+    output: "data/shogun/bt2"
+    conda: "master_env.yaml"
+    shell:
+        """
+        shogun pipeline -i {input} -d /work/akiledal/shogun/ -o shogun_output_bt2 -a bt2
+        """
+
+rule clean:
+    shell:
+        """
+        rm -rf data/assembly_metaspades/*
+        rm -rf raw_data/fastqc_reports
+        rm -rf data/qc_sequence_files
+        rm -rf data/shi7_out
+        """

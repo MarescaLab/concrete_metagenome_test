@@ -1,0 +1,7 @@
+channels:
+  - conda-forge
+  - bioconda
+  - defaults
+  - knights-lab
+dependencies:
+  - multiqc=1.6
