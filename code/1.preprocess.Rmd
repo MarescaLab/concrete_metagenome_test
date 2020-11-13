@@ -11,110 +11,6 @@ knitr::opts_knit$set(root.dir = here::here())
 
 This document lays out the processing of shotgun metagenomic data from a concrete sample (S3 fallen) collected from an ASR affected brige in Northern New Jersey. A negative control sample was also submitted for sequencing, but it failed to generate a signal.
 
-Several dependencies are required:
-
-  -   fastqc used to assess reads pre- and post-processing
-  -   trim-galore! to QC the reads and remove any adapters
-  -   bbmap, specifically for bbmerge, used to join paired end reads
-  -   metaphlan3, used to taxonomically profile the data
-
-Install dependencies
-```{bash}
-conda create --name mpa -c bioconda metaphlan bbmap fastqc cutadapt trim-galore
-```
-
-```{python}
-import os
-import re
-
-raw_seq_folder='data/raw_sequence_files'
-
-file_list=[f for f in sorted(os.listdir(raw_seq_folder)) if (str(f))[-9:] == ".fastq.gz"]
-
-samples = []
-
-for file in file_list:
-    dir_and_file = raw_seq_folder + "/" + file
-    
-    if re.search("_S[0-9]_R1_[0-9]*.fastq.gz",file) and re.sub("_S[0-9]_R1_[0-9]*.fastq.gz", "",file) not in samples:
-      samples.append(re.sub("_S[0-9]_R1_[0-9]*.fastq.gz", "",file))
-    if re.search("_R1.fastq.gz",file) and re.sub("_R1.fastq.gz", "",file) not in samples:
-      samples.append(re.sub("_R1.fastq.gz", "",file))
-    if re.search("_R1_",dir_and_file):
-       new_file = re.sub("_S[0-9]_R1_[0-9]*.fastq.gz", "_R1.fastq.gz",dir_and_file)
-       os.rename(dir_and_file,new_file)
-    if re.search("_R2_",dir_and_file):
-       new_file = re.sub("_S[0-9]_R2_[0-9]*.fastq.gz", "_R2.fastq.gz",dir_and_file)
-       os.rename(dir_and_file,new_file)
-
-#def rename_fastqs():
-#  for 
-
-
-
-
-```
-
-
-```{python}
-import os
-import re
-import subprocess
-import tempfile
-from urllib.request import urlopen
-from urllib.parse import urlparse
-from urllib.error import URLError
-import hashlib
-import shutil
-from distutils.version import StrictVersion
-
-version = subprocess.check_output(
-  "conda --version",
-  stderr=subprocess.STDOUT,
-  universal_newlines=True)
-
-StrictVersion("4.9.0") < StrictVersion("4.2")
-
-```
-
-
-```{bash}
-pwd
-mv data/raw_sequence_files/S3_Fallen_R1.fastq.gz data/raw_sequence_files/S3_Fallen_S1_R1_001.fastq.gz 
-mv data/raw_sequence_files/S3_Fallen_R2.fastq.gz data/raw_sequence_files/S3_Fallen_S1_R2_001.fastq.gz
-```
-
-
-
-Assess read quality
-```{bash}
-source ~/miniconda2/bin/activate mpa
-
-cd data/raw_sequence_files
-
-mkdir fastqc_reports
-
-fastqc -o fastqc_reports -t 4 *.fastq.gz
-```
-Process reads with trim-galore
-```{bash}
-source ~/miniconda2/bin/activate mpa
-
-cd data/raw_sequence_files
-
-trim_galore --paired -o ../qc_sequence_files --basename S3_fallen *.fastq.gz
-
-```
-Re-assess read quality
-```{bash}
-source ~/miniconda2/bin/activate mpa
-
-cd data/qc_sequence_files
-
-mkdir fastqc_reports
-
-fastqc -o fastqc_reports -t 4 *.fq.gz
-```
 
 Merge paired end reads
 ```{r}
@@ -185,11 +81,6 @@ wget ftp://ftp.ncbi.nlm.nih.gov/blast/db/FASTA/nr.gz
 gunzip nr.gz ; mv nr nr.fasta
 
 diamond makedb --in nr.fa -d nr 
-
-
-
-
-
 ```
 
 
