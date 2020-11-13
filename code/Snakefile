@@ -22,6 +22,8 @@ for file in file_list:
        new_file = re.sub("_S[0-9]_R2_[0-9]*.fastq.gz", "_R2.fastq.gz",dir_and_file)
        os.rename(dir_and_file,new_file)
 
+localrules: all, clean
+
 rule all:
     input:
         #'data/assembly_metaspades/{sample}'
@@ -30,7 +32,9 @@ rule all:
         #expand("data/assembly_metaspades/{sample}",sample=samples)
         #expand("data/shogun/input_fastqs/{sample}_{read_dir}.fasta", sample=samples, read_dir=read_dirs)
         "data/shogun/combined_samples.fastq",
-        "data/qc_sequence_files/multiqc"
+        "data/qc_sequence_files/multiqc",
+        expand("data/assembly_megahit/{sample}", sample=samples),
+        expand("data/assembly_metaspades/{sample}", sample=samples)
 
 
 rule fastqc_raw:
@@ -88,17 +92,30 @@ rule multiqc:
         multiqc -d {input.raw_fastqc_dir} {input.qc_fastqc_dir} -o {output}
         """
 
+rule megahit_assemble:
+    input:
+      f_reads = "data/qc_sequence_files/{sample}_R1.fastq.gz",
+      r_reads = "data/qc_sequence_files/{sample}_R2.fastq.gz"
+    output:
+        directory("data/assembly_megahit/{sample}")
+    conda: "master_env.yaml"
+    resources: cpus=8, mem_mb=100000, time_min=1440, mem_bytes = 100000000000
+    shell:
+        """
+        megahit -m {resources.mem_bytes} -1 {input.f_reads} -2 {input.r_reads} -o {output}
+        """
+
 rule metaspades_assemble:
     input:
           f_reads = "data/qc_sequence_files/{sample}_R1.fastq.gz",
           r_reads = "data/qc_sequence_files/{sample}_R2.fastq.gz"
     output:
-          "data/assembly_metaspades/{sample}"
-    conda:
-          "master_env.yaml"
+        directory("data/assembly_metaspades/{sample}")
+    conda: "master_env.yaml"
+    resources: cpus=8, mem_mb=100000, time_min=1440, mem_gb = 100
     shell:
           """
-          metaspades.py -t 4 -m 8 -1 {input.f_reads} -2 {input.r_reads} -o {output}
+          metaspades.py -t {resources.cpus} -m {resources.mem_gb} -1 {input.f_reads} -2 {input.r_reads} -o {output}
           """
 
 ##Alternative to SHI7 using previously QCd reads:

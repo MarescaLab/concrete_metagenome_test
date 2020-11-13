@@ -9,4 +9,4 @@ dependencies:
   - trim-galore=0.6.6
   - shogun=1.0.8
   - bioawk=1.0
-  - multiqc=1.6
+  - megahit=1.2.9
