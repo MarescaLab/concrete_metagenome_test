@@ -7,4 +7,5 @@
 *.fastq.gz
 *.fq.gz
 *.fq
-data/
+data/*
+raw_data/*
