@@ -32,7 +32,7 @@ rule all:
         #expand("data/assembly_metaspades/{sample}",sample=samples)
         #expand("data/shogun/input_fastqs/{sample}_{read_dir}.fasta", sample=samples, read_dir=read_dirs)
         "data/shogun/combined_samples.fastq",
-        "data/qc_sequence_files/multiqc",
+        "results/sequence_quality/",
         expand("data/assembly_megahit/{sample}", sample=samples),
         expand("data/assembly_metaspades/{sample}", sample=samples)
 
@@ -85,7 +85,7 @@ rule multiqc:
     input:
         raw_fastqc_dir = "raw_data/fastqc_reports",
         qc_fastqc_dir = "data/qc_sequence_files/fastqc_reports"
-    output: directory("data/qc_sequence_files/multiqc")
+    output: directory("results/sequence_quality/")
     conda: "multiqc_env.yaml"
     shell:
         """
@@ -172,4 +172,5 @@ rule clean:
         rm -rf raw_data/fastqc_reports
         rm -rf data/qc_sequence_files
         rm -rf data/shi7_out
+        rm 0rf results/sequence_quality
         """

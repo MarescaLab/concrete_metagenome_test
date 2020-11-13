@@ -1,0 +1,5 @@
+Sample	FastQC_mqc-generalstats-fastqc-percent_duplicates	FastQC_mqc-generalstats-fastqc-percent_gc	FastQC_mqc-generalstats-fastqc-avg_sequence_length	FastQC_mqc-generalstats-fastqc-percent_fails	FastQC_mqc-generalstats-fastqc-total_sequences
+data | qc_sequence_files | fastqc_reports | S3_Fallen_R1	76.72900331844323	61.0	150.73645454097505	27.27272727272727	1237961.0
+data | qc_sequence_files | fastqc_reports | S3_Fallen_R2	69.2122868360363	61.0	149.8664190552045	27.27272727272727	1237961.0
+raw_data | fastqc_reports | S3_Fallen_R1	76.65705792554746	61.0	154.0	27.27272727272727	1240164.0
+raw_data | fastqc_reports | S3_Fallen_R2	69.06973966802178	61.0	154.0	27.27272727272727	1240164.0
