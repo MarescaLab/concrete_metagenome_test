@@ -23,6 +23,67 @@ Install dependencies
 conda create --name mpa -c bioconda metaphlan bbmap fastqc cutadapt trim-galore
 ```
 
+```{python}
+import os
+import re
+
+raw_seq_folder='data/raw_sequence_files'
+
+file_list=[f for f in sorted(os.listdir(raw_seq_folder)) if (str(f))[-9:] == ".fastq.gz"]
+
+samples = []
+
+for file in file_list:
+    dir_and_file = raw_seq_folder + "/" + file
+    
+    if re.search("_S[0-9]_R1_[0-9]*.fastq.gz",file) and re.sub("_S[0-9]_R1_[0-9]*.fastq.gz", "",file) not in samples:
+      samples.append(re.sub("_S[0-9]_R1_[0-9]*.fastq.gz", "",file))
+    if re.search("_R1.fastq.gz",file) and re.sub("_R1.fastq.gz", "",file) not in samples:
+      samples.append(re.sub("_R1.fastq.gz", "",file))
+    if re.search("_R1_",dir_and_file):
+       new_file = re.sub("_S[0-9]_R1_[0-9]*.fastq.gz", "_R1.fastq.gz",dir_and_file)
+       os.rename(dir_and_file,new_file)
+    if re.search("_R2_",dir_and_file):
+       new_file = re.sub("_S[0-9]_R2_[0-9]*.fastq.gz", "_R2.fastq.gz",dir_and_file)
+       os.rename(dir_and_file,new_file)
+
+#def rename_fastqs():
+#  for 
+
+
+
+
+```
+
+
+```{python}
+import os
+import re
+import subprocess
+import tempfile
+from urllib.request import urlopen
+from urllib.parse import urlparse
+from urllib.error import URLError
+import hashlib
+import shutil
+from distutils.version import StrictVersion
+
+version = subprocess.check_output(
+  "conda --version",
+  stderr=subprocess.STDOUT,
+  universal_newlines=True)
+
+StrictVersion("4.9.0") < StrictVersion("4.2")
+
+```
+
+
+```{bash}
+pwd
+mv data/raw_sequence_files/S3_Fallen_R1.fastq.gz data/raw_sequence_files/S3_Fallen_S1_R1_001.fastq.gz 
+mv data/raw_sequence_files/S3_Fallen_R2.fastq.gz data/raw_sequence_files/S3_Fallen_S1_R2_001.fastq.gz
+```
+
 
 
 Assess read quality
@@ -41,7 +102,8 @@ source ~/miniconda2/bin/activate mpa
 
 cd data/raw_sequence_files
 
-trim_galore --paired -o ../qc_sequence_files *.fastq.gz
+trim_galore --paired -o ../qc_sequence_files --basename S3_fallen *.fastq.gz
+
 ```
 Re-assess read quality
 ```{bash}
@@ -330,7 +392,7 @@ shogun pipeline -i combined_seqs.fna -d /work/akiledal/shogun/ -o shogun_output 
 ```
 
 
-### Run the Shogun pipeline using bowtie2
+### Run the Shogun pipeline using burst
 ```{bash}
 shogun pipeline -i combined_seqs.fna -d /work/akiledal/shogun/ -o shogun_output_burst -a burst
 ```
@@ -402,7 +464,9 @@ ENDSSH
 ```
 
 
-## Interpret results
+### Interpret results
+
+#### BowTie2 metacodeR figure
 
 Plot metacodeR of the BowTie2 Shogun results
 ```{r}
@@ -523,5 +587,197 @@ heat_tree(node_label = taxon_names,
           ggsave("data/shi7_out/shogun_output/BURST_metacodeR.pdf", device = cairo_pdf, units = "in", height = 12, width = 12, dpi = 300) +
           ggsave("data/shi7_out/shogun_output/BURST_metacodeR.png", type = "cairo", units = "in", dpi = 300, height = 12, width = 12)
 ```
+
+
+
+
+### Kegg results
+
+Download Kegg reference file and format it for importing (based on ANVIO tutorial)
+```{bash}
+
+wget 'https://www.genome.jp/kegg-bin/download_htext?htext=ko00001&format=htext&filedir=' -O data/reference/ko00001.keg
+
+kegfile="data/reference/ko00001.keg"
+
+while read -r prefix content
+do
+    case "$prefix" in A) col1="$content";; \
+                      B) col2="$content" ;; \
+                      C) col3="$content";; \
+                      D) echo -e "$col1\t$col2\t$col3\t$content";;
+    esac 
+done < <(sed '/^[#!+]/d;s/<[^>]*>//g;s/^./& /' < "$kegfile") > data/reference/KO_Orthology_ko00001.txt
+
+```
+
+
+```{r}
+library(tidyverse)
+library(ggalluvial)
+library(KEGGREST)
+
+
+kegg_db <- read_tsv("data/reference/KO_Orthology_ko00001.txt",col_names = c("type","specific_type","pathway","gene")) %>% 
+  separate(gene,c("kegg_id","kegg_name"),sep = "  ") %>% 
+  separate(pathway,c("path_id","path_name"),sep = " ",extra = "merge") %>% 
+  mutate(across(c(type,specific_type),~str_remove(.,"[0-9]* ")))
+
+kegg_mod_db <- read_tsv("data/reference/KEGG_modules_info.tsv",col_names = c("mod_id","module"))
+
+kegg_path_db <- read_tsv("data/reference/KEGG_pathways_info.tsv",col_names = c("path_id","pathway"))
+
+
+kegg_master_db <- read_tsv("data/reference/ko00001.keg")
+
+
+kegg_mod <- read_tsv("data/shi7_out/shogun_output/taxatable.strain.kegg.modules.txt") %>% 
+  mutate(S3_fallen = S3Fallen.S1.R1.R1 + S3Fallen.S1.R1.R2,
+         ra_S3_fallen = S3_fallen / sum(S3_fallen)) %>% 
+  select(mod_id = "#MODULE ID", S3_fallen, ra_S3_fallen) %>% 
+  left_join(kegg_mod_db)
+  
+
+kegg_path <- read_tsv("data/shi7_out/shogun_output/taxatable.strain.kegg.pathways.txt") %>% 
+   mutate(S3_fallen = S3Fallen.S1.R1.R1 + S3Fallen.S1.R1.R2,
+         ra_S3_fallen = S3_fallen / sum(S3_fallen)) %>% 
+  select(path_id = "#PATHWAY ID", S3_fallen, ra_S3_fallen) %>% 
+  left_join(kegg_path_db)
+
+kegg <- read_tsv("data/shi7_out/shogun_output/taxatable.strain.kegg.txt") %>% 
+  mutate(S3_fallen = S3Fallen.S1.R1.R1 + S3Fallen.S1.R1.R2,
+         ra_S3_fallen = S3_fallen / sum(S3_fallen)) %>% 
+  select(kegg_id = "#KEGG ID", S3_fallen, ra_S3_fallen) %>% 
+  left_join(kegg_db)
+
+
+is_alluvia_form(kegg)
+
+
+kegg_alluvial <- kegg %>% select(ra_S3_fallen,type, specific_type) %>% 
+  filter(!type %in% c("Brite Hierarchies","Not Included in Pathway or Brite","NA")) %>% 
+  arrange(ra_S3_fallen)
+
+order <- kegg_alluvial %>% 
+  group_by(specific_type) %>% 
+  summarise(ra_S3_fallen = sum(ra_S3_fallen)) %>% 
+  arrange(ra_S3_fallen) %>% 
+  pull(specific_type) %>% unique()
+
+# 
+# (test <- kegg_alluvial %>% 
+#   ggplot(aes(y = S3_fallen, axis1 = type, axis2 = factor(specific_type,levels = order))) +
+#   geom_alluvium(aes(fill = specific_type), width = 1/12) +
+#   geom_stratum(aes(fill = type),width = 1/12, color = "grey") +
+#   geom_label(stat = "stratum", aes(label = after_stat(stratum))) +
+#   scale_x_discrete(limits = c("type", "specific_type"), expand = c(.05, .05)) +
+#   #scale_fill_viridis_d() +
+#   theme(legend.position = "none")
+#   
+#   )
+
+
+kegg_alluvial %>% 
+  filter(!is.na(specific_type)) %>% 
+  ggplot(aes(factor(specific_type,order),ra_S3_fallen, fill = type)) +
+  geom_bar(stat = "identity") +
+  #facet_grid(~type,scales = "free_x") +
+  coord_flip() +
+  theme_bw() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1, vjust = 1)) +
+  scale_fill_viridis_d() +
+  labs(x = NULL, y = "relative abundance", title = "KEGG processes in concrete metagenome", subtitle = "SHOGUN results from BowTie2 alignment") +
+  ggsave("results/figures/kegg_shogun_bt2.png",type = "cairo", width = 8, height = 8)
+
+
+```
+
+
+
+## Assemble with metaspades
+```{bash}
+date
+ssh akiledal@biomix.dbi.udel.edu "sbatch" <<'ENDSSH'
+#!/bin/bash
+#SBATCH --job-name=metaspades
+#SBATCH --chdir=/work/akiledal/metagenomics_trial/
+#SBATCH --mem=800G
+#SBATCH -c 8
+#SBATCH --mail-type=ALL
+#SBATCH --mail-user=akiledal@udel.edu
+#SBATCH --time=20-0
+
+source ~/.bashrc
+
+date
+hostname
+start=`date +%s`
+
+###Script starts here###
+
+conda activate spades
+
+metaspades.py \
+  -t 8 \
+  -m 800 \
+  -1 data/qc_sequence_files/S3_fallen_val_1.fq.gz \
+  -2 data/qc_sequence_files/S3_fallen_val_2.fq.gz \
+  -o assembly_metaspades/S3_fallen
+
+
+###Script ends here###
+echo "Duration: $((($(date +%s)-$start)/60)) minutes"
+ENDSSH
+```
+
+
+
+
+```{r}
+library(Biostrings)
+library(tidyverse)
+
+metaspades_contigs <- readDNAStringSet("data/assembly_metaspades/S3_Fallen/contigs.fasta")
+
+megahit_contigs <- readDNAStringSet("data/assembly_megahit/S3_Fallen/final.contigs.fa")
+
+megahit_df <- as.data.frame(megahit_contigs) %>% 
+  rownames_to_column("header") %>% 
+  rename(sequence = "x") %>%
+  separate("header",into=c("name","flag","coverage","length"),sep = " ") %>% 
+  mutate(across(c("flag","coverage","length"),~as.numeric(str_remove(.,"^[a-z]*="))),
+         assembler = "megahit")
+
+metaspades_df <- as.data.frame(contigs) %>% 
+  rename(sequence = "x") %>%
+  rownames_to_column("contig") %>% 
+  separate("contig",into = as.character(1:6),sep = "_") %>% 
+  select(name = "2",
+         length = "4",
+         coverage = "6",
+         sequence) %>% 
+  mutate(across(c(length,coverage),~as.numeric(.)),
+         assembler = "metaspades")
+
+contigs_df <- full_join(metaspades_df,megahit_df)
+
+contigs_df %>% ggplot(aes(length,fill=assembler)) +
+  geom_histogram() +
+  scale_y_log10() +
+  labs(title = "Contig length distribution (log)") +
+  theme_bw()
+
+contigs_df %>% ggplot(aes(length,coverage,color =assembler)) +
+  geom_point(alpha =0.5) +
+  scale_y_log10() +
+  labs(title ="Contig length vs. coverage",
+       x = "length (bp)",
+       y = "coverage [log]") +
+  theme_bw() +
+  ggsave("results/figures/assembly_summary.png",device = "png",width = 6, height = 4)
+
+```
+
+
 
 
