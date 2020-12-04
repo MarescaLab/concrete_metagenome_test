@@ -10,3 +10,4 @@ dependencies:
   - shogun=1.0.8
   - bioawk=1.0
   - megahit=1.2.9
+  - cutadapt= 2.10
