@@ -1,0 +1,255 @@
+---
+title: "kegg_enrichment"
+author: "Anders Kiledal"
+date: "11/12/2020"
+output: html_document
+---
+
+
+```{r setup, include=FALSE}
+knitr::opts_knit$set(root.dir = here::here())
+```
+
+```{r}
+library(tidyverse)
+```
+
+
+```{r}
+s3_kegg_module <- read_tsv("data/shogun/shogun_burst_function/.strain.kegg.modules.txt")
+
+s3_kegg_module_coverage <- read_tsv("data/shogun/shogun_burst_function/.strain.kegg.modules.coverage.txt")
+
+kegg_modules <- read_tsv("data/reference/shogun/function/ko-module-annotations.txt")
+
+```
+
+```{r}
+s3_kegg_pathway <- read_tsv("data/shogun/shogun_burst_function/.strain.kegg.pathways.txt")
+
+s3_kegg_pathway_coverage <- read_tsv("data/shogun/shogun_burst_function/.strain.kegg.pathways.coverage.txt")
+
+kegg_pathways <- read_tsv("data/reference/shogun/function/ko-pathway-annotations.txt")
+
+
+kegg_enzymes <- read_tsv("data/reference/shogun/function/ko-enzyme-annotations.txt")
+
+kegg_strain <- read_tsv("data/reference/shogun/function/ko-strain2ko.txt")
+
+ko_info <- read_delim("data/reference/ko_info.tsv", 
+    "\t", escape_double = FALSE, col_names = FALSE, 
+    trim_ws = TRUE) %>% 
+  rename(ko = "X1",
+         ko_name = "X2")
+
+```
+
+
+
+The way Mengyin calculated odds ratios was:
+
+Odds ratios were calculated for each COG category identified in
+the metagenomic data set by calculating the ratio (A/B)/(C/D), where A is
+the number of reads in the metagenome that are in a given COG category,
+B is the number of reads in the metagenome that are in all of the other
+COG categories, C is the number of proteins in the COG database that are
+in a given COG category, and D is the number of proteins in the COG
+database that are in all of the other COG categories. COG categories with
+odds ratios of 1 were considered enriched (42), meaning that they are
+more highly represented in the metagenomic data than in the protein
+database.
+
+Parse the kegg data
+```{r}
+
+#res <- readLines("data/reference/")
+#R> length(res)
+
+ko00001 <- read_delim("data/reference/ko00001.keg", 
+    "\t", escape_double = FALSE, col_names = FALSE, 
+    trim_ws = TRUE) %>% 
+  separate(X1, into = c("level","id","name"),sep = "      ") %>% 
+  mutate(id = if_else(str_detect(level,"^A"),str_remove(level,"^A"),id),
+         level = if_else(str_detect(level,"^A"),"A",level),
+         id = if_else(str_detect(level,"^B"),str_remove(level,"^B  "),id),
+         level = if_else(str_detect(level,"^B"),"B",level),
+         id = if_else(str_detect(level,"^C"),str_remove(level,"^C    "),id),
+         level = if_else(str_detect(level,"^C"),"C",level)
+         ) %>% 
+  filter(id != "B") %>% 
+  separate(id,into = c("id","name"),sep = "  ") %>% 
+  mutate(name = if_else(level %in% c("A","B","C"),str_remove(id,"[0-9]* "),name),
+         id = if_else(level %in% c("A","B","C"),str_extract(id,"[0-9]*"),id),
+         A = "",
+         B = "",
+         C = "",
+         family = "",
+         path_type = "",
+         pathway = "")
+
+
+A=""
+B=""
+C=""
+
+
+ko_process <- function(table) {
+  
+  in_table <- table
+  for (i in 1:nrow(in_table)){
+    if (in_table[i,1]=="A"){
+      A <- in_table[i,"id"]
+      family <- in_table[i,"name"] 
+      
+      #Reset lower values
+      B <- ""
+      c <- ""
+      path_type = ""
+      pathway = ""
+      
+    }
+    if (in_table[i,1]=="B"){
+      B <- in_table[i,"id"]
+      path_type <- in_table[i,"name"]
+      
+      C <- ""
+      pathway <- ""
+    }
+    if (in_table[i,1]=="C"){
+      C <- in_table[i,"id"]
+      pathway <- in_table[i,"name"]
+    }
+    
+    in_table[i,"A"] <- A
+    in_table[i,"B"] <- B
+    in_table[i,"C"] <- C
+    in_table[i,"family"] <- family
+    in_table[i,"path_type"] <- path_type
+    in_table[i,"pathway"] <- pathway
+  }
+  return(in_table)
+}
+
+kegg_data <- ko_process(ko00001)
+
+
+
+```
+
+
+```{r}
+
+kegg <- kegg_data %>% 
+  filter(level == "D") %>% 
+  mutate(total = n()) %>% 
+  group_by(pathway) %>% 
+  mutate(n_in = n(),
+         n_out = total - n_in)
+
+
+meta_kegg <- s3_kegg_pathway <- read_tsv("data/shogun/burst/taxatable.strain.kegg.txt") %>% 
+  rename(id = "#KEGG ID") %>% 
+  mutate(meta_abund = S3_Fallen_R1 + S3_Fallen_R1) %>% 
+  select(id, meta_abund)
+
+
+joined_kegg <- kegg %>% 
+  left_join(meta_kegg) %>% 
+  ungroup() %>% 
+  mutate(meta_abund = replace_na(meta_abund,0)) %>% 
+  mutate(meta_total = sum(meta_abund)) %>% 
+  group_by(pathway) %>% 
+  mutate(meta_in = sum(meta_abund),
+         meta_out = meta_total - meta_in,
+         OR = (meta_in/meta_out) / (n_in/n_out))
+
+
+pathway_or <- joined_kegg %>% 
+  select(pathway, OR) %>% 
+  distinct()
+
+
+#Kegg pathway abundance
+s3_kegg_pathway <- read_tsv("data/shogun/burst/taxatable.strain.kegg.pathways.txt")
+
+```
+
+
+
+
+
+
+```{r}
+s3_mod <- read_tsv("data/shogun/burst/taxatable.strain.kegg.modules.txt")
+
+mod_info <- read_tsv("data/reference/KEGG_modules_info.tsv",col_names = c("module","name")) %>% distinct()
+
+get_module_ko <- function(module) {
+  data <- tryCatch(KEGGREST::keggGet(module), error=function(e) NULL)
+  res <- str_replace_all(data[[1]]$DEFINITION,"[\\+(),-]"," ") %>% 
+    str_split("\\s+") %>% 
+    unlist() %>% 
+    Filter(function(x){str_detect(x, "^K")}, .) 
+  
+  if(length(res) > 0){
+  results <- res %>% 
+    data.frame(mod = module,
+               ko = .)
+  }
+  if(length(res) == 0){
+  results <- data.frame(module = module,
+               ko = NA)
+  }
+  
+  return(results)
+  }
+
+
+mod_test_list <- c("M00014","M00095")
+
+results <- lapply(unique(mod_info$module), get_module_ko)
+
+re2 <- bind_rows(results) %>% rename(module = "mod")
+
+write_tsv(re2, "data/reference/kegg_module_mem.tsv")
+
+
+
+mod_W_abund <- re2 %>% 
+  left_join(meta_kegg %>% rename(ko = "id")) %>% 
+  left_join(mod_info %>% rename(module_name = "name")) %>% 
+  left_join(ko_info) %>% 
+  mutate(meta_abund = replace_na(meta_abund,0)) %>% 
+  mutate(meta_total = sum(meta_abund)) %>% 
+  mutate(total = n()) %>% 
+  group_by(module) %>% 
+  mutate(n_in = n(),
+         n_out = total - n_in) %>% 
+  filter(meta_abund > 0) %>% 
+  group_by(module) %>% 
+  mutate(meta_in = sum(meta_abund),
+         meta_out = meta_total - meta_in,
+         OR = (meta_in/meta_out) / (n_in/n_out))
+
+
+pathway_or <- joined_kegg %>% 
+  select(pathway, OR) %>% 
+  distinct()
+
+
+
+mod_test <- keggGet("M00014")
+
+test_vec <- str_replace_all(mod_test[[1]]$DEFINITION,"[(),-]"," ") %>% str_split("\\s+") %>% unlist()
+
+filt_fun <- function(x){str_detect(x, "^K")}
+
+dat <- get_module_ko("M00095")
+```
+
+
+```{r}
+mod_test <- keggGet("M00014")
+```
+
+
