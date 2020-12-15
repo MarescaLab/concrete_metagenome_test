@@ -35,6 +35,7 @@ rule all:
         "results/sequence_quality/",
         expand("data/assembly_megahit/{sample}", sample=samples),
         expand("data/assembly_metaspades/{sample}", sample=samples),
+        expand("data/prodigal/{sample}",sample=samples),
         "data/shogun/bt2/",
         "data/shogun/burst/"
 
@@ -186,7 +187,7 @@ rule prodigal:
         contigs="data/assembly_megahit/{sample}/final.contigs.fa"
     output: directory("data/prodigal/{sample}")
     conda: "code/master_env.yaml"
-    resources: cpus=48, mem_mb=800000, time_min=1440, mem_gb = 800
+    resources: cpus=1, mem_mb=50000, time_min=1440
     shell:
         """
         prodigal -i {contigs} -o {output}/genes.gbk -a {output}/proteins.faa -p meta
