@@ -114,7 +114,7 @@ rule metaspades_assemble:
     output:
         directory("data/assembly_metaspades/{sample}")
     conda: "code/master_env.yaml"
-    resources: cpus=8, mem_mb=100000, time_min=2160, mem_gb = 100
+    resources: cpus=16, mem_mb=1000000, time_min=7200, mem_gb = 500
     shell:
           """
           metaspades.py -t {resources.cpus} -m {resources.mem_gb} -1 {input.f_reads} -2 {input.r_reads} -o {output}
@@ -180,6 +180,18 @@ rule shogun_burst: ###Need to get database setup
         """
         shogun pipeline -i {input.seqs} -d {input.db} -o {output} -a burst --threads {resources.cpus}
         """
+#Predict genes with prodigal
+rule prodigal:
+    input:
+        contigs="data/assembly_megahit/{sample}/final.contigs.fa"
+    output: directory("data/prodigal/{sample}")
+    conda: "code/master_env.yaml"
+    resources: cpus=48, mem_mb=800000, time_min=1440, mem_gb = 800
+    shell:
+        """
+        prodigal -i {contigs} -o {output}/genes.gbk -a {output}/proteins.faa -p meta
+        """
+
 
 
 rule clean:
@@ -191,4 +203,5 @@ rule clean:
         rm -rf data/shi7_out
         rm -rf results/sequence_quality
         rm -f data/shogun/combined_samples.fasta
+        rm -rf data/prodigal
         """
