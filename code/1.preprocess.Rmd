@@ -9,7 +9,7 @@ output: html_document
 knitr::opts_knit$set(root.dir = here::here())
 ```
 
-This document lays out the processing of shotgun metagenomic data from a concrete sample (S3 fallen) collected from an ASR affected brige in Northern New Jersey. A negative control sample was also submitted for sequencing, but it failed to generate a signal.
+This document lays out the processing of shotgun metagenomic data from a concrete sample (S3 fallen) collected from an ASR affected bridge in Northern New Jersey. A negative control sample was also submitted for sequencing, but it failed to generate a signal.
 
 
 Merge paired end reads
@@ -368,10 +368,11 @@ library(readr)
 library(metacoder)
 library(viridis)
 
-table <- read_tsv("data/shi7_out/shogun_output/taxatable.strain.ra.txt") %>% 
-  mutate(S3_fallen = (S3Fallen.S1.R1.R1 + S3Fallen.S1.R1.R2) / 2 ) %>% 
+table <- read_tsv("data/shogun/bt2/taxatable.strain.ra.txt") %>% 
+  #mutate(S3_fallen = (S3Fallen.S1.R1.R1 + S3Fallen.S1.R1.R2) / 2 ) %>% 
+  rename(S3_fallen= "S3") %>% 
   select(lineage = "#OTU ID",S3_fallen) %>% 
-  write_tsv("data/shi7_out/shogun_output/rel_abund.txt") #write the table w/ F & R summarized into one sample
+  write_tsv("data/shogun/bt2/rel_abund.txt") #write the table w/ F & R summarized into one sample
 
 met_samples <- data.frame(sample_id = "S3_fallen", Type = "Concrete")
 
@@ -414,8 +415,8 @@ heat_tree(node_label = taxon_names,
           node_color = Concrete,
           node_color_range = c("gray80","gray80","gray80"),
           node_color_axis_label = "Relative abundance") +
-          ggsave("data/shi7_out/shogun_output/metacodeR.pdf", device = cairo_pdf, units = "in", height = 12, width = 12, dpi = 300) +
-          ggsave("data/shi7_out/shogun_output/metacodeR.png", type = "cairo", units = "in", dpi = 300, height = 12, width = 12)
+          ggsave("results/figures/shogun_bt2_community.pdf", device = cairo_pdf, units = "in", height = 12, width = 12, dpi = 300) +
+          ggsave("results/figures/shogun_bt2_community.png", type = "cairo", units = "in", dpi = 300, height = 12, width = 12)
 ```
 
 
@@ -429,10 +430,11 @@ library(readr)
 library(metacoder)
 library(viridis)
 
-table <- read_tsv("data/shi7_out/shogun_burst/shogun_burst_tax") %>% 
-  mutate(S3_fallen = (S3.Fallen.S1.R1.001.R1 + S3.Fallen.S1.R1.001.R2) / 2 ) %>% 
+table <- read_tsv("data/shogun/burst/taxatable.strain.ra.txt") %>% 
+  #mutate(S3_fallen = (S3.Fallen.S1.R1.001.R1 + S3.Fallen.S1.R1.001.R2) / 2 ) %>% 
+  mutate(S3_fallen = (S3_Fallen_R1 + S3_Fallen_R2) / 2 ) %>% 
   select(lineage = "#OTU ID",S3_fallen) %>% 
-  write_tsv("data/shi7_out/shogun_output/burst_rel_abund.txt") #write the table w/ F & R summarized into one sample
+  write_tsv("data/shogun/burst/rel_abund.txt") #write the table w/ F & R summarized into one sample
 
 met_samples <- data.frame(sample_id = "S3_fallen", Type = "Concrete")
 
@@ -475,8 +477,8 @@ heat_tree(node_label = taxon_names,
           node_color = Concrete,
           node_color_range = c("gray80","gray80","gray80"),
           node_color_axis_label = "Relative abundance") +
-          ggsave("data/shi7_out/shogun_output/BURST_metacodeR.pdf", device = cairo_pdf, units = "in", height = 12, width = 12, dpi = 300) +
-          ggsave("data/shi7_out/shogun_output/BURST_metacodeR.png", type = "cairo", units = "in", dpi = 300, height = 12, width = 12)
+          ggsave("results/figures/shogun_burst_community.pdf", device = cairo_pdf, units = "in", height = 12, width = 12, dpi = 300) +
+          ggsave("results/figures/shogun_burst_community.png", type = "cairo", units = "in", dpi = 300, height = 12, width = 12)
 ```
 
 
@@ -668,6 +670,24 @@ contigs_df %>% ggplot(aes(length,coverage,color =assembler)) +
   ggsave("results/figures/assembly_summary.png",device = "png",width = 6, height = 4)
 
 ```
+
+
+
+
+#Check taxonomy with SourMash
+Compute signature for our genome
+```{bash engine.opts='-i'}
+conda activate sourmash
+
+#sourmash compute --scaled 1000 -k 31 data/qc_sequence_files/S3_Fallen_R1.fastq.gz -o data/sourmash/S3_f.sig
+
+#sourmash search data/sourmash/S3_f.sig ../concrete_isolate_genomes/reference/sourmash/genbank-k31.sbt.zip -n 20
+
+sourmash lca summarize --db ../concrete_isolate_genomes/reference/sourmash/genbank-k31.lca.json.gz --query data/sourmash/S3_f.sig
+
+```
+
+
 
 
 
