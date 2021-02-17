@@ -372,7 +372,9 @@ names <- c(
 #   mutate(sample = "S3_fallen",
 #          id = str_remove(id,"KO:"))
 
-foam_hmm <- read_rds("h:/concrete_metagenome_test/data/FOAM/S3_Fallen_combined.rds")
+foam_hmm <- read_rds("h:/concrete_metagenome_test/data/FOAM/S3_Fallen_combined.rds") %>% 
+  group_by(sample,id) %>% 
+  summarise(meta_abund = sum(meta_abund))
 
 kegg <- read_tsv("data/reference/kegg.tsv")
 
@@ -383,11 +385,14 @@ foam_ontology <- read_tsv("data/reference/FOAM-onto_rel1.tsv")
 level <- sym("L2")
 
 foam2 <- foam_ontology %>% 
+  gather("level","group", -c(KO)) %>% 
+  group_by(level) %>% 
   mutate(total = n()) %>% 
-  group_by(!!level) %>% 
+  group_by(level,group) %>% 
   mutate(n_in = n(),
          n_out = total - n_in) %>% 
-  rename(id = "KO")
+  rename(id = "KO") %>% 
+  filter(!is.na(group))
 
 
 meta_kegg <- foam_hmm
@@ -398,9 +403,9 @@ joined_kegg <- foam2 %>%
   left_join(meta_kegg) %>% 
   ungroup() %>% 
   mutate(meta_abund = replace_na(meta_abund,0)) %>% 
-  group_by(sample) %>% 
+  group_by(sample,level) %>% 
   mutate(meta_total = sum(meta_abund)) %>% 
-  group_by(sample, !!level) %>% 
+  group_by(sample, level,group) %>% 
   mutate(meta_in = sum(meta_abund),
          meta_out = meta_total - meta_in,
          meta_prop= meta_in / meta_total,
@@ -409,15 +414,17 @@ joined_kegg <- foam2 %>%
 
 fisher <- joined_kegg %>% 
   filter(!is.na(sample)) %>% 
-  select(sample, L1, L2,n_in,n_out,meta_total,meta_prop,meta_in,meta_out,OR) %>% 
+  #select(sample, L1, L2,n_in,n_out,meta_total,meta_prop,meta_in,meta_out,OR) %>% 
   unique() %>% 
-  group_by(sample, !!level) %>% 
+  ungroup %>% group_by(sample, level, group) %>% 
   mutate(fisher = list(fisher.test(matrix(c(meta_in,n_in,meta_out,n_out),nrow=2,ncol=2))),
          fisher.p = fisher[[1]]$p.value,
          fisher.OR = fisher[[1]]$estimate,
          fisher.ci.lower = fisher[[1]]$conf.int[1],
          fisher.ci.upper = fisher[[1]]$conf.int[2]) %>% 
-  ungroup() %>% group_by(sample) %>% 
+  select(sample, level, group, fisher, fisher.p, fisher.OR, fisher.ci.lower, fisher.ci.upper, OR) %>% 
+  unique() %>% 
+  ungroup() %>% group_by(sample, level) %>%
   mutate(p.fdr = p.adjust(fisher.p,method = "fdr"))
 
 
@@ -432,6 +439,9 @@ fisher %>%
   
   
   
+fisher %>% ggplot(aes())
+
+
   
 fisher %>% 
   filter(fisher.p <= 0.05) %>% 
