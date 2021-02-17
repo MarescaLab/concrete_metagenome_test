@@ -88,9 +88,39 @@ kegg <- kegg_data %>%
   group_by(pathway) %>% 
   mutate(n_in = n(),
          n_out = total - n_in)
+
+kegg %>% write_tsv("data/reference/kegg.tsv")
+
+
 ```
 
+Import GHOSTkoala data
+```{r}
 
+kegg <- read_tsv("data/reference/kegg.tsv")
+
+ghost_combined <- data.frame()
+tax_combined <- data.frame()
+
+for (folder in basename(list.dirs("data/GHOSTkoala")[-1])){
+  
+  ghost <- read.table(file.path("data/GHOSTkoala",folder,"user_ko.txt"), quote="\"", comment.char="",fill = TRUE,row.names = NULL,header = FALSE) %>% 
+    rename(contig_name = "V1", id = "V2") %>% 
+    group_by(id) %>% 
+    filter(!is.na(id)) %>% 
+    summarise(meta_abund = n()) %>% 
+    mutate(sample = folder)
+  
+  ghost_combined <- bind_rows(ghost_combined,ghost)
+
+  tax_summary <- read_tsv(file.path("data/GHOSTkoala",folder,"user.out.top"),col_names = F) %>% 
+    select(genus = "X5") %>% 
+    group_by(genus) %>% 
+    summarise(abund = n())
+  
+  tax_combined <- bind_rows(tax_combined,tax_summary)
+}
+```
 
 
 The way Mengyin calculated odds ratios was:
@@ -109,12 +139,16 @@ database.
 
 Calculate odds ratios for Kegg pathways
 ```{r}
-meta_kegg <- read_tsv("data/shogun/burst/taxatable.strain.kegg.txt") %>% 
-  rename(id = "#KEGG ID") %>% 
-  gather("sample","abund",-"id") %>% 
-  mutate(sample = str_remove(sample,"_R[1,2]")) %>% 
-  group_by(id,sample) %>% 
-  summarise(meta_abund = sum(abund))
+# meta_kegg <- read_tsv("data/shogun/burst/taxatable.strain.kegg.txt") %>% 
+#  rename(id = "#KEGG ID") %>% 
+#  gather("sample","abund",-"id") %>% 
+#  mutate(sample = str_remove(sample,"_R[1,2]")) %>% 
+#  group_by(id,sample) %>% 
+#  summarise(meta_abund = sum(abund))
+
+meta_kegg <- ghost_combined
+
+samples <- unique(meta_kegg$sample)
 
 joined_kegg <- kegg %>% 
   left_join(meta_kegg) %>% 
@@ -126,6 +160,14 @@ joined_kegg <- kegg %>%
   mutate(meta_in = sum(meta_abund),
          meta_out = meta_total - meta_in,
          OR = (meta_in/meta_out) / (n_in/n_out))
+
+
+fisher <- joined_kegg %>% 
+  filter(!is.na(sample)) %>% 
+  select(sample, family,path_type,pathway,n_in,n_out,meta_total,meta_in,meta_out,OR) %>% 
+  unique() %>% 
+  group_by(sample,pathway) %>% 
+  mutate(fisher.p = fisher.test(matrix(c(meta_in,n_in,meta_out,n_out),nrow=2,ncol=2))$p.value)
 
 pathway_or <- joined_kegg %>% 
   select(pathway, OR, sample) %>% 
@@ -191,30 +233,65 @@ mod_W_abund <- re2 %>%
          OR = (meta_in/meta_out) / (n_in/n_out))
 
 
-module_or <- joined_kegg %>% 
-  select(pathway, OR, sample) %>% 
+fisher_mod <- mod_W_abund %>% 
+  filter(!is.na(sample)) %>% 
+  select(sample, module,module_name,n_in,n_out,meta_total,meta_in,meta_out,OR) %>% 
+  unique() %>% 
+  group_by(sample,module) %>% 
+  mutate(fisher.p = fisher.test(matrix(c(meta_in,n_in,meta_out,n_out),nrow=2,ncol=2))$p.value,
+         fisher.OR = fisher.test(matrix(c(meta_in,n_in,meta_out,n_out),nrow=2,ncol=2))$estimate) %>% 
+  ungroup() %>% group_by(sample) %>% 
+  mutate(fisher.p.fdr = p.adjust(fisher.p,method = "fdr"))
+
+module_or <- mod_W_abund %>% 
+  select(module, module_name, OR, sample) %>% 
   distinct()
+
+fisher_mod %>% 
+  ggplot(aes(fisher.OR, fisher.p.fdr)) +
+  geom_point() +
+  scale_y_log10() + 
+  scale_x_log10() + 
+  scale_y_reverse()
+
 ```
 
 
 Calculate log2 ratios between normal soil and concrete for kegg modules.
 
 ```{r}
+
+gm_mean = function(x, na.rm=TRUE){
+  exp(sum(log(x[x > 0]), na.rm=na.rm) / length(x))
+}
+
 mod_rel <- mod_W_abund %>% 
   mutate(rel_abund = meta_in / meta_total) %>% 
   filter(!is.na(sample)) %>% 
-  select(sample,rel_abund,module,ko,module_name,ko_name) %>% 
+  select(sample,rel_abund,module,module_name,-ko_name,-ko) %>% 
   distinct() %>% 
   pivot_wider(values_from = "rel_abund", names_from = "sample") %>% 
   ungroup %>% distinct() %>% 
   mutate(log2_ratio = log2(S3_Fallen/ERR1939167),
          mean_rel_abund = (S3_Fallen + ERR1939167)/2)
 
+mod_clr <- mod_rel %>% 
+  pivot_longer(samples) %>% 
+  group_by(name) %>% 
+  mutate(geo_mean = gm_mean(value),
+         clr_micro = log(value) - mean(log(value)),
+         clr_std = log(value) - log(geo_mean)) %>% 
+  ungroup() %>% 
+  select(-value, -clr_micro, -mean_rel_abund, -geo_mean) %>%
+  spread(key = name, value = clr_std) %>% 
+  mutate(clr_diff = S3_Fallen - ERR1939167)
+
 
 mod_rel %>%
   filter(mean_rel_abund < 0.2) %>% 
   ggplot(aes(log2_ratio, mean_rel_abund)) +
-  geom_point()
+  geom_point() +
+  labs(title = "Kegg module log2 ratio concrete / soil")
 
 ```
 
@@ -248,6 +325,133 @@ deseq2_tab %>% ggplot(aes(log2FoldChange,padj)) +
 
 
 
+# FOAM
+
+Foam run on biomix with this command
+```{bash}
+hmmsearch --tblout s3_sixframe.txt --cpu 8 -o s3_sixframe.hm ../reference/FOAM-hmm_rel1.hmm six_frame_S3_f.fasta
+```
+
+
+
+## Import the FOAM results and process
+
+Processed the tblout files from hmm with this bash command before importing into R (removes extra whitespace and makes parsing easier)
+
+```{bash}
+tail -n+4 S3_fallen.txt | sed 's/ * / /g' | cut -f 1-10 -d " " > S3_fallen_mod.txt
+```
+
+
+```{r fig.height=12, fig.width=12}
+library(data.table)
+library(vroom)
+library(tidyverse)
+
+names <- c(
+		"target.name",
+		"target.accession",
+		"query.name",
+		"query.accession",
+		"full.sequence.E.value",
+		"full.sequence.score",
+		"full.sequence.bias",
+		"best.1.domain.E.value",
+		"best.1.domain.score",
+		"best.1.domain.bias")
+
+# foam_hmm <- vroom("data/FOAM/S3_sixframe_mod.txt",col_names = names,num_threads = 8) %>% 
+#   filter(best.1.domain.score >= 14) %>%  #Min value used in the FOAM HMMerBestHit.py script
+#   mutate(target.name = str_remove(target.name, "_[0-9]$")) %>% 
+#   group_by(target.name) %>% 
+#   top_n(1,full.sequence.E.value) %>% 
+#   separate_rows(query.name,sep = ",") %>% 
+#   ungroup() %>% group_by(query.name) %>% 
+#   summarise(meta_abund = n()) %>% 
+#   rename(id = "query.name") %>% 
+#   mutate(sample = "S3_fallen",
+#          id = str_remove(id,"KO:"))
+
+foam_hmm <- read_rds("h:/concrete_metagenome_test/data/FOAM/S3_Fallen_combined.rds")
+
+kegg <- read_tsv("data/reference/kegg.tsv")
+
+#foam_hmm <- read_tsv("data/FOAM/S3_sixframe_summarized.tsv")
+
+foam_ontology <- read_tsv("data/reference/FOAM-onto_rel1.tsv")
+
+level <- sym("L2")
+
+foam2 <- foam_ontology %>% 
+  mutate(total = n()) %>% 
+  group_by(!!level) %>% 
+  mutate(n_in = n(),
+         n_out = total - n_in) %>% 
+  rename(id = "KO")
+
+
+meta_kegg <- foam_hmm
+samples <- unique(meta_kegg$sample)
+
+
+joined_kegg <- foam2 %>% 
+  left_join(meta_kegg) %>% 
+  ungroup() %>% 
+  mutate(meta_abund = replace_na(meta_abund,0)) %>% 
+  group_by(sample) %>% 
+  mutate(meta_total = sum(meta_abund)) %>% 
+  group_by(sample, !!level) %>% 
+  mutate(meta_in = sum(meta_abund),
+         meta_out = meta_total - meta_in,
+         meta_prop= meta_in / meta_total,
+         OR = (meta_in/meta_out) / (n_in/n_out))
+
+
+fisher <- joined_kegg %>% 
+  filter(!is.na(sample)) %>% 
+  select(sample, L1, L2,n_in,n_out,meta_total,meta_prop,meta_in,meta_out,OR) %>% 
+  unique() %>% 
+  group_by(sample, !!level) %>% 
+  mutate(fisher = list(fisher.test(matrix(c(meta_in,n_in,meta_out,n_out),nrow=2,ncol=2))),
+         fisher.p = fisher[[1]]$p.value,
+         fisher.OR = fisher[[1]]$estimate,
+         fisher.ci.lower = fisher[[1]]$conf.int[1],
+         fisher.ci.upper = fisher[[1]]$conf.int[2]) %>% 
+  ungroup() %>% group_by(sample) %>% 
+  mutate(p.fdr = p.adjust(fisher.p,method = "fdr"))
+
+
+fisher %>% 
+  filter(fisher.OR > 1) %>% 
+  ggplot(aes(fisher.OR, reorder(L2,fisher.OR), color = p.fdr < 0.05)) +
+  geom_point() +
+  geom_errorbarh(aes(xmin = fisher.ci.lower, xmax = fisher.ci.upper)) +
+  coord_cartesian(xlim = c(0,25)) +
+  geom_vline(xintercept = 1) +
+  theme_bw()
+  
+  
+  
+  
+fisher %>% 
+  filter(fisher.p <= 0.05) %>% 
+  ggplot(aes(fisher.OR, meta_prop,color = L1)) +
+  geom_point() +
+  geom_errorbarh(aes(xmin = fisher.ci.lower, xmax = fisher.ci.upper)) +
+  coord_cartesian(xlim = c(0,10)) +
+  geom_vline(xintercept = 1) +
+  theme_bw()
+
+
+```
+
+
+From unassembled reads, translated into all 6 frames
+```{bash}
+
+transeq S3_Fallen_R1.fastq -outseq six_frame_S3_f.fasta -frame=6
+ hmmsearch --tblout s3_sixframe.txt --cpu 8 --domT 14 -o s3_sixframe.hm ../reference/FOAM-hmm_rel1.hmm six_frame_S3_f.fasta
+```
 
 
 
