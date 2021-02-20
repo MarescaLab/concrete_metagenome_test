@@ -9,8 +9,90 @@ output: html_document
 knitr::opts_knit$set(root.dir = here::here())
 ```
 
-This document lays out the processing of shotgun metagenomic data from a concrete sample (S3 fallen) collected from an ASR affected bridge in Northern New Jersey. A negative control sample was also submitted for sequencing, but it failed to generate a signal.
+This document lays out the processing of shotgun metagenomic data from a concrete sample (S3 fallen) collected from an ASR affected brige in Northern New Jersey. A negative control sample was also submitted for sequencing, but it failed to generate a signal.
 
+Several dependencies are required:
+
+  -   fastqc used to assess reads pre- and post-processing
+  -   trim-galore! to QC the reads and remove any adapters
+  -   bbmap, specifically for bbmerge, used to join paired end reads
+  -   metaphlan3, used to taxonomically profile the data
+
+Install dependencies
+```{bash}
+conda create --name mpa -c bioconda metaphlan bbmap fastqc cutadapt trim-galore
+```
+
+```{python}
+import os
+import re
+
+raw_seq_folder='data/raw_sequence_files'
+
+file_list=[f for f in sorted(os.listdir(raw_seq_folder)) if (str(f))[-9:] == ".fastq.gz"]
+
+samples = []
+
+for file in file_list:
+    dir_and_file = raw_seq_folder + "/" + file
+    
+    if re.search("_S[0-9]_R1_[0-9]*.fastq.gz",file) and re.sub("_S[0-9]_R1_[0-9]*.fastq.gz", "",file) not in samples:
+      samples.append(re.sub("_S[0-9]_R1_[0-9]*.fastq.gz", "",file))
+    if re.search("_R1.fastq.gz",file) and re.sub("_R1.fastq.gz", "",file) not in samples:
+      samples.append(re.sub("_R1.fastq.gz", "",file))
+    if re.search("_R1_",dir_and_file):
+       new_file = re.sub("_S[0-9]_R1_[0-9]*.fastq.gz", "_R1.fastq.gz",dir_and_file)
+       os.rename(dir_and_file,new_file)
+    if re.search("_R2_",dir_and_file):
+       new_file = re.sub("_S[0-9]_R2_[0-9]*.fastq.gz", "_R2.fastq.gz",dir_and_file)
+       os.rename(dir_and_file,new_file)
+
+#def rename_fastqs():
+#  for 
+
+
+
+
+```
+
+
+```{bash}
+pwd
+mv data/raw_sequence_files/S3_Fallen_R1.fastq.gz data/raw_sequence_files/S3_Fallen_S1_R1_001.fastq.gz 
+mv data/raw_sequence_files/S3_Fallen_R2.fastq.gz data/raw_sequence_files/S3_Fallen_S1_R2_001.fastq.gz
+```
+
+
+
+Assess read quality
+```{bash}
+source ~/miniconda2/bin/activate mpa
+
+cd data/raw_sequence_files
+
+mkdir fastqc_reports
+
+fastqc -o fastqc_reports -t 4 *.fastq.gz
+```
+Process reads with trim-galore
+```{bash}
+source ~/miniconda2/bin/activate mpa
+
+cd data/raw_sequence_files
+
+trim_galore --paired -o ../qc_sequence_files --basename S3_fallen *.fastq.gz
+
+```
+Re-assess read quality
+```{bash}
+source ~/miniconda2/bin/activate mpa
+
+cd data/qc_sequence_files
+
+mkdir fastqc_reports
+
+fastqc -o fastqc_reports -t 4 *.fq.gz
+```
 
 Merge paired end reads
 ```{r}
@@ -81,6 +163,11 @@ wget ftp://ftp.ncbi.nlm.nih.gov/blast/db/FASTA/nr.gz
 gunzip nr.gz ; mv nr nr.fasta
 
 diamond makedb --in nr.fa -d nr 
+
+
+
+
+
 ```
 
 
@@ -283,7 +370,7 @@ shogun pipeline -i combined_seqs.fna -d /work/akiledal/shogun/ -o shogun_output 
 ```
 
 
-### Run the Shogun pipeline using burst
+### Run the Shogun pipeline using bowtie2
 ```{bash}
 shogun pipeline -i combined_seqs.fna -d /work/akiledal/shogun/ -o shogun_output_burst -a burst
 ```
@@ -368,11 +455,10 @@ library(readr)
 library(metacoder)
 library(viridis)
 
-table <- read_tsv("data/shogun/bt2/taxatable.strain.ra.txt") %>% 
-  #mutate(S3_fallen = (S3Fallen.S1.R1.R1 + S3Fallen.S1.R1.R2) / 2 ) %>% 
-  rename(S3_fallen= "S3") %>% 
+table <- read_tsv("data/shi7_out/shogun_output/taxatable.strain.ra.txt") %>% 
+  mutate(S3_fallen = (S3Fallen.S1.R1.R1 + S3Fallen.S1.R1.R2) / 2 ) %>% 
   select(lineage = "#OTU ID",S3_fallen) %>% 
-  write_tsv("data/shogun/bt2/rel_abund.txt") #write the table w/ F & R summarized into one sample
+  write_tsv("data/shi7_out/shogun_output/rel_abund.txt") #write the table w/ F & R summarized into one sample
 
 met_samples <- data.frame(sample_id = "S3_fallen", Type = "Concrete")
 
@@ -415,8 +501,8 @@ heat_tree(node_label = taxon_names,
           node_color = Concrete,
           node_color_range = c("gray80","gray80","gray80"),
           node_color_axis_label = "Relative abundance") +
-          ggsave("results/figures/shogun_bt2_community.pdf", device = cairo_pdf, units = "in", height = 12, width = 12, dpi = 300) +
-          ggsave("results/figures/shogun_bt2_community.png", type = "cairo", units = "in", dpi = 300, height = 12, width = 12)
+          ggsave("data/shi7_out/shogun_output/metacodeR.pdf", device = cairo_pdf, units = "in", height = 12, width = 12, dpi = 300) +
+          ggsave("data/shi7_out/shogun_output/metacodeR.png", type = "cairo", units = "in", dpi = 300, height = 12, width = 12)
 ```
 
 
@@ -430,11 +516,10 @@ library(readr)
 library(metacoder)
 library(viridis)
 
-table <- read_tsv("data/shogun/burst/taxatable.strain.ra.txt") %>% 
-  #mutate(S3_fallen = (S3.Fallen.S1.R1.001.R1 + S3.Fallen.S1.R1.001.R2) / 2 ) %>% 
-  mutate(S3_fallen = (S3_Fallen_R1 + S3_Fallen_R2) / 2 ) %>% 
+table <- read_tsv("data/shi7_out/shogun_burst/shogun_burst_tax") %>% 
+  mutate(S3_fallen = (S3.Fallen.S1.R1.001.R1 + S3.Fallen.S1.R1.001.R2) / 2 ) %>% 
   select(lineage = "#OTU ID",S3_fallen) %>% 
-  write_tsv("data/shogun/burst/rel_abund.txt") #write the table w/ F & R summarized into one sample
+  write_tsv("data/shi7_out/shogun_output/burst_rel_abund.txt") #write the table w/ F & R summarized into one sample
 
 met_samples <- data.frame(sample_id = "S3_fallen", Type = "Concrete")
 
@@ -477,8 +562,8 @@ heat_tree(node_label = taxon_names,
           node_color = Concrete,
           node_color_range = c("gray80","gray80","gray80"),
           node_color_axis_label = "Relative abundance") +
-          ggsave("results/figures/shogun_burst_community.pdf", device = cairo_pdf, units = "in", height = 12, width = 12, dpi = 300) +
-          ggsave("results/figures/shogun_burst_community.png", type = "cairo", units = "in", dpi = 300, height = 12, width = 12)
+          ggsave("data/shi7_out/shogun_output/BURST_metacodeR.pdf", device = cairo_pdf, units = "in", height = 12, width = 12, dpi = 300) +
+          ggsave("data/shi7_out/shogun_output/BURST_metacodeR.png", type = "cairo", units = "in", dpi = 300, height = 12, width = 12)
 ```
 
 
@@ -630,62 +715,35 @@ ENDSSH
 library(Biostrings)
 library(tidyverse)
 
-metaspades_contigs <- readDNAStringSet("data/assembly_metaspades/S3_Fallen/contigs.fasta")
+contigs <- readDNAStringSet("data/assembly_metaspades/S3_fallen_biomix/contigs.fasta")
 
-megahit_contigs <- readDNAStringSet("data/assembly_megahit/S3_Fallen/final.contigs.fa")
-
-megahit_df <- as.data.frame(megahit_contigs) %>% 
-  rownames_to_column("header") %>% 
-  rename(sequence = "x") %>%
-  separate("header",into=c("name","flag","coverage","length"),sep = " ") %>% 
-  mutate(across(c("flag","coverage","length"),~as.numeric(str_remove(.,"^[a-z]*="))),
-         assembler = "megahit")
-
-metaspades_df <- as.data.frame(contigs) %>% 
+contigs_df <- as.data.frame(contigs) %>% 
   rename(sequence = "x") %>%
   rownames_to_column("contig") %>% 
   separate("contig",into = as.character(1:6),sep = "_") %>% 
-  select(name = "2",
+  select(node = "2",
          length = "4",
          coverage = "6",
          sequence) %>% 
-  mutate(across(c(length,coverage),~as.numeric(.)),
-         assembler = "metaspades")
+  mutate(across(c(node,length,coverage),~as.numeric(.)))
 
-contigs_df <- full_join(metaspades_df,megahit_df)
-
-contigs_df %>% ggplot(aes(length,fill=assembler)) +
+contigs_df %>% ggplot(aes(length)) +
   geom_histogram() +
   scale_y_log10() +
   labs(title = "Contig length distribution (log)") +
   theme_bw()
 
-contigs_df %>% ggplot(aes(length,coverage,color =assembler)) +
-  geom_point(alpha =0.5) +
+contigs_df %>% ggplot(aes(length,coverage)) +
+  geom_point() +
   scale_y_log10() +
   labs(title ="Contig length vs. coverage",
-       x = "length (bp)",
-       y = "coverage [log]") +
-  theme_bw() +
-  ggsave("results/figures/assembly_summary.png",device = "png",width = 6, height = 4)
+       subtitle ="Assembled with metaspades",
+       y = "coverage (log)") +
+  theme_bw()
 
 ```
 
 
-
-
-#Check taxonomy with SourMash
-Compute signature for our genome
-```{bash engine.opts='-i'}
-conda activate sourmash
-
-#sourmash compute --scaled 1000 -k 31 data/qc_sequence_files/S3_Fallen_R1.fastq.gz -o data/sourmash/S3_f.sig
-
-#sourmash search data/sourmash/S3_f.sig ../concrete_isolate_genomes/reference/sourmash/genbank-k31.sbt.zip -n 20
-
-sourmash lca summarize --db ../concrete_isolate_genomes/reference/sourmash/genbank-k31.lca.json.gz --query data/sourmash/S3_f.sig
-
-```
 
 
 

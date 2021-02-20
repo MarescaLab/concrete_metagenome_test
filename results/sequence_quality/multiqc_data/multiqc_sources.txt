@@ -1,9 +1,9 @@
 Module	Section	Sample Name	Source
-FastQC	all_sections	raw_data | fastqc_reports | S3_Fallen_R2	/work/akiledal/concrete_metagenome_test/raw_data/fastqc_reports/S3_Fallen_R2_fastqc.zip
 FastQC	all_sections	raw_data | fastqc_reports | S3_Fallen_R1	/work/akiledal/concrete_metagenome_test/raw_data/fastqc_reports/S3_Fallen_R1_fastqc.zip
+FastQC	all_sections	raw_data | fastqc_reports | S3_Fallen_R2	/work/akiledal/concrete_metagenome_test/raw_data/fastqc_reports/S3_Fallen_R2_fastqc.zip
 FastQC	all_sections	raw_data | fastqc_reports | ERR1939167_R2	/work/akiledal/concrete_metagenome_test/raw_data/fastqc_reports/ERR1939167_R2_fastqc.zip
 FastQC	all_sections	raw_data | fastqc_reports | ERR1939167_R1	/work/akiledal/concrete_metagenome_test/raw_data/fastqc_reports/ERR1939167_R1_fastqc.zip
-FastQC	all_sections	data | qc_sequence_files | fastqc_reports | S3_Fallen_R1	/work/akiledal/concrete_metagenome_test/data/qc_sequence_files/fastqc_reports/S3_Fallen_R1_fastqc.zip
 FastQC	all_sections	data | qc_sequence_files | fastqc_reports | S3_Fallen_R2	/work/akiledal/concrete_metagenome_test/data/qc_sequence_files/fastqc_reports/S3_Fallen_R2_fastqc.zip
-FastQC	all_sections	data | qc_sequence_files | fastqc_reports | ERR1939167_R1	/work/akiledal/concrete_metagenome_test/data/qc_sequence_files/fastqc_reports/ERR1939167_R1_fastqc.zip
+FastQC	all_sections	data | qc_sequence_files | fastqc_reports | S3_Fallen_R1	/work/akiledal/concrete_metagenome_test/data/qc_sequence_files/fastqc_reports/S3_Fallen_R1_fastqc.zip
 FastQC	all_sections	data | qc_sequence_files | fastqc_reports | ERR1939167_R2	/work/akiledal/concrete_metagenome_test/data/qc_sequence_files/fastqc_reports/ERR1939167_R2_fastqc.zip
+FastQC	all_sections	data | qc_sequence_files | fastqc_reports | ERR1939167_R1	/work/akiledal/concrete_metagenome_test/data/qc_sequence_files/fastqc_reports/ERR1939167_R1_fastqc.zip

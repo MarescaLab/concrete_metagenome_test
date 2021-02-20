@@ -2,31 +2,31 @@
     "report_data_sources": {
         "FastQC": {
             "all_sections": {
-                "raw_data | fastqc_reports | S3_Fallen_R2": "/work/akiledal/concrete_metagenome_test/raw_data/fastqc_reports/S3_Fallen_R2_fastqc.zip",
                 "raw_data | fastqc_reports | S3_Fallen_R1": "/work/akiledal/concrete_metagenome_test/raw_data/fastqc_reports/S3_Fallen_R1_fastqc.zip",
+                "raw_data | fastqc_reports | S3_Fallen_R2": "/work/akiledal/concrete_metagenome_test/raw_data/fastqc_reports/S3_Fallen_R2_fastqc.zip",
                 "raw_data | fastqc_reports | ERR1939167_R2": "/work/akiledal/concrete_metagenome_test/raw_data/fastqc_reports/ERR1939167_R2_fastqc.zip",
                 "raw_data | fastqc_reports | ERR1939167_R1": "/work/akiledal/concrete_metagenome_test/raw_data/fastqc_reports/ERR1939167_R1_fastqc.zip",
-                "data | qc_sequence_files | fastqc_reports | S3_Fallen_R1": "/work/akiledal/concrete_metagenome_test/data/qc_sequence_files/fastqc_reports/S3_Fallen_R1_fastqc.zip",
                 "data | qc_sequence_files | fastqc_reports | S3_Fallen_R2": "/work/akiledal/concrete_metagenome_test/data/qc_sequence_files/fastqc_reports/S3_Fallen_R2_fastqc.zip",
-                "data | qc_sequence_files | fastqc_reports | ERR1939167_R1": "/work/akiledal/concrete_metagenome_test/data/qc_sequence_files/fastqc_reports/ERR1939167_R1_fastqc.zip",
-                "data | qc_sequence_files | fastqc_reports | ERR1939167_R2": "/work/akiledal/concrete_metagenome_test/data/qc_sequence_files/fastqc_reports/ERR1939167_R2_fastqc.zip"
+                "data | qc_sequence_files | fastqc_reports | S3_Fallen_R1": "/work/akiledal/concrete_metagenome_test/data/qc_sequence_files/fastqc_reports/S3_Fallen_R1_fastqc.zip",
+                "data | qc_sequence_files | fastqc_reports | ERR1939167_R2": "/work/akiledal/concrete_metagenome_test/data/qc_sequence_files/fastqc_reports/ERR1939167_R2_fastqc.zip",
+                "data | qc_sequence_files | fastqc_reports | ERR1939167_R1": "/work/akiledal/concrete_metagenome_test/data/qc_sequence_files/fastqc_reports/ERR1939167_R1_fastqc.zip"
             }
         }
     },
     "report_general_stats_data": [
         {
-            "raw_data | fastqc_reports | S3_Fallen_R2": {
-                "percent_gc": 61.0,
-                "avg_sequence_length": 154.0,
-                "total_sequences": 1240164.0,
-                "percent_duplicates": 69.06973966802178,
-                "percent_fails": 27.27272727272727
-            },
             "raw_data | fastqc_reports | S3_Fallen_R1": {
                 "percent_gc": 61.0,
                 "avg_sequence_length": 154.0,
                 "total_sequences": 1240164.0,
                 "percent_duplicates": 76.65705792554746,
+                "percent_fails": 27.27272727272727
+            },
+            "raw_data | fastqc_reports | S3_Fallen_R2": {
+                "percent_gc": 61.0,
+                "avg_sequence_length": 154.0,
+                "total_sequences": 1240164.0,
+                "percent_duplicates": 69.06973966802178,
                 "percent_fails": 27.27272727272727
             },
             "raw_data | fastqc_reports | ERR1939167_R2": {
@@ -43,13 +43,6 @@
                 "percent_duplicates": 4.03674354427956,
                 "percent_fails": 18.181818181818183
             },
-            "data | qc_sequence_files | fastqc_reports | S3_Fallen_R1": {
-                "percent_gc": 61.0,
-                "avg_sequence_length": 150.73645454097505,
-                "total_sequences": 1237961.0,
-                "percent_duplicates": 76.72900331844323,
-                "percent_fails": 27.27272727272727
-            },
             "data | qc_sequence_files | fastqc_reports | S3_Fallen_R2": {
                 "percent_gc": 61.0,
                 "avg_sequence_length": 149.8664190552045,
@@ -57,18 +50,25 @@
                 "percent_duplicates": 69.2122868360363,
                 "percent_fails": 27.27272727272727
             },
-            "data | qc_sequence_files | fastqc_reports | ERR1939167_R1": {
-                "percent_gc": 64.0,
-                "avg_sequence_length": 139.1158809407265,
-                "total_sequences": 21598116.0,
-                "percent_duplicates": 3.8013067834669556,
-                "percent_fails": 9.090909090909092
+            "data | qc_sequence_files | fastqc_reports | S3_Fallen_R1": {
+                "percent_gc": 61.0,
+                "avg_sequence_length": 150.73645454097505,
+                "total_sequences": 1237961.0,
+                "percent_duplicates": 76.72900331844323,
+                "percent_fails": 27.27272727272727
             },
             "data | qc_sequence_files | fastqc_reports | ERR1939167_R2": {
                 "percent_gc": 64.0,
                 "avg_sequence_length": 134.15396870727056,
                 "total_sequences": 21598116.0,
                 "percent_duplicates": 3.578986989609973,
+                "percent_fails": 9.090909090909092
+            },
+            "data | qc_sequence_files | fastqc_reports | ERR1939167_R1": {
+                "percent_gc": 64.0,
+                "avg_sequence_length": 139.1158809407265,
+                "total_sequences": 21598116.0,
+                "percent_duplicates": 3.8013067834669556,
                 "percent_fails": 9.090909090909092
             }
         }
@@ -1514,14 +1514,14 @@
                 "xDecimals": false,
                 "tt_label": "<b>Base {point.x}</b>: {point.y:.2f}",
                 "colors": {
-                    "raw_data | fastqc_reports | S3_Fallen_R2": "#5cb85c",
                     "raw_data | fastqc_reports | S3_Fallen_R1": "#5cb85c",
+                    "raw_data | fastqc_reports | S3_Fallen_R2": "#5cb85c",
                     "raw_data | fastqc_reports | ERR1939167_R2": "#d9534f",
                     "raw_data | fastqc_reports | ERR1939167_R1": "#5cb85c",
-                    "data | qc_sequence_files | fastqc_reports | S3_Fallen_R1": "#5cb85c",
                     "data | qc_sequence_files | fastqc_reports | S3_Fallen_R2": "#5cb85c",
-                    "data | qc_sequence_files | fastqc_reports | ERR1939167_R1": "#5cb85c",
-                    "data | qc_sequence_files | fastqc_reports | ERR1939167_R2": "#5cb85c"
+                    "data | qc_sequence_files | fastqc_reports | S3_Fallen_R1": "#5cb85c",
+                    "data | qc_sequence_files | fastqc_reports | ERR1939167_R2": "#5cb85c",
+                    "data | qc_sequence_files | fastqc_reports | ERR1939167_R1": "#5cb85c"
                 },
                 "yPlotBands": [
                     {
@@ -2493,14 +2493,14 @@
                 "xmin": 0,
                 "xDecimals": false,
                 "colors": {
-                    "raw_data | fastqc_reports | S3_Fallen_R2": "#5cb85c",
                     "raw_data | fastqc_reports | S3_Fallen_R1": "#5cb85c",
+                    "raw_data | fastqc_reports | S3_Fallen_R2": "#5cb85c",
                     "raw_data | fastqc_reports | ERR1939167_R2": "#5cb85c",
                     "raw_data | fastqc_reports | ERR1939167_R1": "#5cb85c",
-                    "data | qc_sequence_files | fastqc_reports | S3_Fallen_R1": "#5cb85c",
                     "data | qc_sequence_files | fastqc_reports | S3_Fallen_R2": "#5cb85c",
-                    "data | qc_sequence_files | fastqc_reports | ERR1939167_R1": "#5cb85c",
-                    "data | qc_sequence_files | fastqc_reports | ERR1939167_R2": "#5cb85c"
+                    "data | qc_sequence_files | fastqc_reports | S3_Fallen_R1": "#5cb85c",
+                    "data | qc_sequence_files | fastqc_reports | ERR1939167_R2": "#5cb85c",
+                    "data | qc_sequence_files | fastqc_reports | ERR1939167_R1": "#5cb85c"
                 },
                 "tt_label": "<b>Phred {point.x}</b>: {point.y} reads",
                 "xPlotBands": [
@@ -9100,14 +9100,14 @@
                 "yDecimals": false,
                 "tt_label": "<b>{point.x}% GC</b>: {point.y}",
                 "colors": {
-                    "raw_data | fastqc_reports | S3_Fallen_R2": "#d9534f",
                     "raw_data | fastqc_reports | S3_Fallen_R1": "#d9534f",
+                    "raw_data | fastqc_reports | S3_Fallen_R2": "#d9534f",
                     "raw_data | fastqc_reports | ERR1939167_R2": "#d9534f",
                     "raw_data | fastqc_reports | ERR1939167_R1": "#d9534f",
-                    "data | qc_sequence_files | fastqc_reports | S3_Fallen_R1": "#d9534f",
                     "data | qc_sequence_files | fastqc_reports | S3_Fallen_R2": "#d9534f",
-                    "data | qc_sequence_files | fastqc_reports | ERR1939167_R1": "#f0ad4e",
-                    "data | qc_sequence_files | fastqc_reports | ERR1939167_R2": "#f0ad4e"
+                    "data | qc_sequence_files | fastqc_reports | S3_Fallen_R1": "#d9534f",
+                    "data | qc_sequence_files | fastqc_reports | ERR1939167_R2": "#f0ad4e",
+                    "data | qc_sequence_files | fastqc_reports | ERR1939167_R1": "#f0ad4e"
                 },
                 "data_labels": [
                     {
@@ -10403,14 +10403,14 @@
                 "xmin": 0,
                 "xDecimals": false,
                 "colors": {
-                    "raw_data | fastqc_reports | S3_Fallen_R2": "#5cb85c",
                     "raw_data | fastqc_reports | S3_Fallen_R1": "#5cb85c",
+                    "raw_data | fastqc_reports | S3_Fallen_R2": "#5cb85c",
                     "raw_data | fastqc_reports | ERR1939167_R2": "#5cb85c",
                     "raw_data | fastqc_reports | ERR1939167_R1": "#5cb85c",
-                    "data | qc_sequence_files | fastqc_reports | S3_Fallen_R1": "#5cb85c",
                     "data | qc_sequence_files | fastqc_reports | S3_Fallen_R2": "#5cb85c",
-                    "data | qc_sequence_files | fastqc_reports | ERR1939167_R1": "#5cb85c",
-                    "data | qc_sequence_files | fastqc_reports | ERR1939167_R2": "#5cb85c"
+                    "data | qc_sequence_files | fastqc_reports | S3_Fallen_R1": "#5cb85c",
+                    "data | qc_sequence_files | fastqc_reports | ERR1939167_R2": "#5cb85c",
+                    "data | qc_sequence_files | fastqc_reports | ERR1939167_R1": "#5cb85c"
                 },
                 "tt_label": "<b>Base {point.x}</b>: {point.y:.2f}%",
                 "yPlotBands": [
@@ -10943,14 +10943,14 @@
                 "yMinTickInterval": 0.1,
                 "xDecimals": false,
                 "colors": {
-                    "raw_data | fastqc_reports | S3_Fallen_R2": "#5cb85c",
                     "raw_data | fastqc_reports | S3_Fallen_R1": "#5cb85c",
+                    "raw_data | fastqc_reports | S3_Fallen_R2": "#5cb85c",
                     "raw_data | fastqc_reports | ERR1939167_R2": "#5cb85c",
                     "raw_data | fastqc_reports | ERR1939167_R1": "#5cb85c",
-                    "data | qc_sequence_files | fastqc_reports | S3_Fallen_R1": "#f0ad4e",
                     "data | qc_sequence_files | fastqc_reports | S3_Fallen_R2": "#f0ad4e",
-                    "data | qc_sequence_files | fastqc_reports | ERR1939167_R1": "#f0ad4e",
-                    "data | qc_sequence_files | fastqc_reports | ERR1939167_R2": "#f0ad4e"
+                    "data | qc_sequence_files | fastqc_reports | S3_Fallen_R1": "#f0ad4e",
+                    "data | qc_sequence_files | fastqc_reports | ERR1939167_R2": "#f0ad4e",
+                    "data | qc_sequence_files | fastqc_reports | ERR1939167_R1": "#f0ad4e"
                 },
                 "tt_label": "<b>{point.x} bp</b>: {point.y}"
             }
@@ -11164,14 +11164,14 @@
                 "ymin": 0,
                 "yMinTickInterval": 0.1,
                 "colors": {
-                    "raw_data | fastqc_reports | S3_Fallen_R2": "#d9534f",
                     "raw_data | fastqc_reports | S3_Fallen_R1": "#d9534f",
+                    "raw_data | fastqc_reports | S3_Fallen_R2": "#d9534f",
                     "raw_data | fastqc_reports | ERR1939167_R2": "#5cb85c",
                     "raw_data | fastqc_reports | ERR1939167_R1": "#5cb85c",
-                    "data | qc_sequence_files | fastqc_reports | S3_Fallen_R1": "#d9534f",
                     "data | qc_sequence_files | fastqc_reports | S3_Fallen_R2": "#d9534f",
-                    "data | qc_sequence_files | fastqc_reports | ERR1939167_R1": "#5cb85c",
-                    "data | qc_sequence_files | fastqc_reports | ERR1939167_R2": "#5cb85c"
+                    "data | qc_sequence_files | fastqc_reports | S3_Fallen_R1": "#d9534f",
+                    "data | qc_sequence_files | fastqc_reports | ERR1939167_R2": "#5cb85c",
+                    "data | qc_sequence_files | fastqc_reports | ERR1939167_R1": "#5cb85c"
                 },
                 "tt_label": "<b>{point.x}</b>: {point.y:.1f}%"
             }
@@ -12115,15 +12115,15 @@
     },
     "report_saved_raw_data": {
         "multiqc_fastqc": {
-            "raw_data | fastqc_reports | S3_Fallen_R2": {
-                "Filename": "S3_Fallen_R2.fastq.gz",
+            "raw_data | fastqc_reports | S3_Fallen_R1": {
+                "Filename": "S3_Fallen_R1.fastq.gz",
                 "File type": "Conventional base calls",
                 "Encoding": "Sanger / Illumina 1.9",
                 "Total Sequences": 1240164.0,
                 "Sequences flagged as poor quality": 0.0,
                 "Sequence length": 154.0,
                 "%GC": 61.0,
-                "total_deduplicated_percentage": 30.93026033197821,
+                "total_deduplicated_percentage": 23.342942074452537,
                 "avg_sequence_length": 154.0,
                 "basic_statistics": "pass",
                 "per_base_sequence_quality": "pass",
@@ -12137,15 +12137,15 @@
                 "overrepresented_sequences": "pass",
                 "adapter_content": "pass"
             },
-            "raw_data | fastqc_reports | S3_Fallen_R1": {
-                "Filename": "S3_Fallen_R1.fastq.gz",
+            "raw_data | fastqc_reports | S3_Fallen_R2": {
+                "Filename": "S3_Fallen_R2.fastq.gz",
                 "File type": "Conventional base calls",
                 "Encoding": "Sanger / Illumina 1.9",
                 "Total Sequences": 1240164.0,
                 "Sequences flagged as poor quality": 0.0,
                 "Sequence length": 154.0,
                 "%GC": 61.0,
-                "total_deduplicated_percentage": 23.342942074452537,
+                "total_deduplicated_percentage": 30.93026033197821,
                 "avg_sequence_length": 154.0,
                 "basic_statistics": "pass",
                 "per_base_sequence_quality": "pass",
@@ -12203,28 +12203,6 @@
                 "overrepresented_sequences": "pass",
                 "adapter_content": "pass"
             },
-            "data | qc_sequence_files | fastqc_reports | S3_Fallen_R1": {
-                "Filename": "S3_Fallen_R1.fastq.gz",
-                "File type": "Conventional base calls",
-                "Encoding": "Sanger / Illumina 1.9",
-                "Total Sequences": 1237961.0,
-                "Sequences flagged as poor quality": 0.0,
-                "Sequence length": "20-154",
-                "%GC": 61.0,
-                "total_deduplicated_percentage": 23.27099668155676,
-                "avg_sequence_length": 150.73645454097505,
-                "basic_statistics": "pass",
-                "per_base_sequence_quality": "pass",
-                "per_tile_sequence_quality": "pass",
-                "per_sequence_quality_scores": "pass",
-                "per_base_sequence_content": "fail",
-                "per_sequence_gc_content": "fail",
-                "per_base_n_content": "pass",
-                "sequence_length_distribution": "warn",
-                "sequence_duplication_levels": "fail",
-                "overrepresented_sequences": "pass",
-                "adapter_content": "pass"
-            },
             "data | qc_sequence_files | fastqc_reports | S3_Fallen_R2": {
                 "Filename": "S3_Fallen_R2.fastq.gz",
                 "File type": "Conventional base calls",
@@ -12247,25 +12225,25 @@
                 "overrepresented_sequences": "pass",
                 "adapter_content": "pass"
             },
-            "data | qc_sequence_files | fastqc_reports | ERR1939167_R1": {
-                "Filename": "ERR1939167_R1.fastq.gz",
+            "data | qc_sequence_files | fastqc_reports | S3_Fallen_R1": {
+                "Filename": "S3_Fallen_R1.fastq.gz",
                 "File type": "Conventional base calls",
                 "Encoding": "Sanger / Illumina 1.9",
-                "Total Sequences": 21598116.0,
+                "Total Sequences": 1237961.0,
                 "Sequences flagged as poor quality": 0.0,
-                "Sequence length": "20-150",
-                "%GC": 64.0,
-                "total_deduplicated_percentage": 96.19869321653304,
-                "avg_sequence_length": 139.1158809407265,
+                "Sequence length": "20-154",
+                "%GC": 61.0,
+                "total_deduplicated_percentage": 23.27099668155676,
+                "avg_sequence_length": 150.73645454097505,
                 "basic_statistics": "pass",
                 "per_base_sequence_quality": "pass",
                 "per_tile_sequence_quality": "pass",
                 "per_sequence_quality_scores": "pass",
                 "per_base_sequence_content": "fail",
-                "per_sequence_gc_content": "warn",
+                "per_sequence_gc_content": "fail",
                 "per_base_n_content": "pass",
                 "sequence_length_distribution": "warn",
-                "sequence_duplication_levels": "pass",
+                "sequence_duplication_levels": "fail",
                 "overrepresented_sequences": "pass",
                 "adapter_content": "pass"
             },
@@ -12290,18 +12268,40 @@
                 "sequence_duplication_levels": "pass",
                 "overrepresented_sequences": "pass",
                 "adapter_content": "pass"
+            },
+            "data | qc_sequence_files | fastqc_reports | ERR1939167_R1": {
+                "Filename": "ERR1939167_R1.fastq.gz",
+                "File type": "Conventional base calls",
+                "Encoding": "Sanger / Illumina 1.9",
+                "Total Sequences": 21598116.0,
+                "Sequences flagged as poor quality": 0.0,
+                "Sequence length": "20-150",
+                "%GC": 64.0,
+                "total_deduplicated_percentage": 96.19869321653304,
+                "avg_sequence_length": 139.1158809407265,
+                "basic_statistics": "pass",
+                "per_base_sequence_quality": "pass",
+                "per_tile_sequence_quality": "pass",
+                "per_sequence_quality_scores": "pass",
+                "per_base_sequence_content": "fail",
+                "per_sequence_gc_content": "warn",
+                "per_base_n_content": "pass",
+                "sequence_length_distribution": "warn",
+                "sequence_duplication_levels": "pass",
+                "overrepresented_sequences": "pass",
+                "adapter_content": "pass"
             }
         },
         "multiqc_general_stats": {
-            "raw_data | fastqc_reports | S3_Fallen_R2": {
-                "FastQC_mqc-generalstats-fastqc-percent_duplicates": 69.06973966802178,
+            "raw_data | fastqc_reports | S3_Fallen_R1": {
+                "FastQC_mqc-generalstats-fastqc-percent_duplicates": 76.65705792554746,
                 "FastQC_mqc-generalstats-fastqc-percent_gc": 61.0,
                 "FastQC_mqc-generalstats-fastqc-avg_sequence_length": 154.0,
                 "FastQC_mqc-generalstats-fastqc-percent_fails": 27.27272727272727,
                 "FastQC_mqc-generalstats-fastqc-total_sequences": 1240164.0
             },
-            "raw_data | fastqc_reports | S3_Fallen_R1": {
-                "FastQC_mqc-generalstats-fastqc-percent_duplicates": 76.65705792554746,
+            "raw_data | fastqc_reports | S3_Fallen_R2": {
+                "FastQC_mqc-generalstats-fastqc-percent_duplicates": 69.06973966802178,
                 "FastQC_mqc-generalstats-fastqc-percent_gc": 61.0,
                 "FastQC_mqc-generalstats-fastqc-avg_sequence_length": 154.0,
                 "FastQC_mqc-generalstats-fastqc-percent_fails": 27.27272727272727,
@@ -12321,13 +12321,6 @@
                 "FastQC_mqc-generalstats-fastqc-percent_fails": 18.181818181818183,
                 "FastQC_mqc-generalstats-fastqc-total_sequences": 22312698.0
             },
-            "data | qc_sequence_files | fastqc_reports | S3_Fallen_R1": {
-                "FastQC_mqc-generalstats-fastqc-percent_duplicates": 76.72900331844323,
-                "FastQC_mqc-generalstats-fastqc-percent_gc": 61.0,
-                "FastQC_mqc-generalstats-fastqc-avg_sequence_length": 150.73645454097505,
-                "FastQC_mqc-generalstats-fastqc-percent_fails": 27.27272727272727,
-                "FastQC_mqc-generalstats-fastqc-total_sequences": 1237961.0
-            },
             "data | qc_sequence_files | fastqc_reports | S3_Fallen_R2": {
                 "FastQC_mqc-generalstats-fastqc-percent_duplicates": 69.2122868360363,
                 "FastQC_mqc-generalstats-fastqc-percent_gc": 61.0,
@@ -12335,17 +12328,24 @@
                 "FastQC_mqc-generalstats-fastqc-percent_fails": 27.27272727272727,
                 "FastQC_mqc-generalstats-fastqc-total_sequences": 1237961.0
             },
-            "data | qc_sequence_files | fastqc_reports | ERR1939167_R1": {
-                "FastQC_mqc-generalstats-fastqc-percent_duplicates": 3.8013067834669556,
-                "FastQC_mqc-generalstats-fastqc-percent_gc": 64.0,
-                "FastQC_mqc-generalstats-fastqc-avg_sequence_length": 139.1158809407265,
-                "FastQC_mqc-generalstats-fastqc-percent_fails": 9.090909090909092,
-                "FastQC_mqc-generalstats-fastqc-total_sequences": 21598116.0
+            "data | qc_sequence_files | fastqc_reports | S3_Fallen_R1": {
+                "FastQC_mqc-generalstats-fastqc-percent_duplicates": 76.72900331844323,
+                "FastQC_mqc-generalstats-fastqc-percent_gc": 61.0,
+                "FastQC_mqc-generalstats-fastqc-avg_sequence_length": 150.73645454097505,
+                "FastQC_mqc-generalstats-fastqc-percent_fails": 27.27272727272727,
+                "FastQC_mqc-generalstats-fastqc-total_sequences": 1237961.0
             },
             "data | qc_sequence_files | fastqc_reports | ERR1939167_R2": {
                 "FastQC_mqc-generalstats-fastqc-percent_duplicates": 3.578986989609973,
                 "FastQC_mqc-generalstats-fastqc-percent_gc": 64.0,
                 "FastQC_mqc-generalstats-fastqc-avg_sequence_length": 134.15396870727056,
+                "FastQC_mqc-generalstats-fastqc-percent_fails": 9.090909090909092,
+                "FastQC_mqc-generalstats-fastqc-total_sequences": 21598116.0
+            },
+            "data | qc_sequence_files | fastqc_reports | ERR1939167_R1": {
+                "FastQC_mqc-generalstats-fastqc-percent_duplicates": 3.8013067834669556,
+                "FastQC_mqc-generalstats-fastqc-percent_gc": 64.0,
+                "FastQC_mqc-generalstats-fastqc-avg_sequence_length": 139.1158809407265,
                 "FastQC_mqc-generalstats-fastqc-percent_fails": 9.090909090909092,
                 "FastQC_mqc-generalstats-fastqc-total_sequences": 21598116.0
             }
@@ -12359,7 +12359,7 @@
         "raw_data/fastqc_reports",
         "data/qc_sequence_files/fastqc_reports"
     ],
-    "config_creation_date": "2020-11-19, 23:20",
+    "config_creation_date": "2020-12-03, 21:07",
     "config_git_hash": null,
     "config_intro_text": null,
     "config_report_comment": null,
