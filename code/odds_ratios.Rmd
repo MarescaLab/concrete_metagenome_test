@@ -377,14 +377,30 @@ foam_hmm <- read_rds("h:/concrete_metagenome_test/data/FOAM/S3_Fallen_combined.r
   summarise(meta_abund = sum(meta_abund))
 
 kegg <- read_tsv("data/reference/kegg.tsv")
+mod_info <- read_tsv("data/reference/KEGG_modules_info.tsv",col_names = c("module","name")) %>% distinct()
+kegg_modules <- read_tsv("data/reference/kegg_module_mem.tsv") %>% left_join(mod_info)
+
+
+kegg_ontology <- kegg %>%
+  select(family, path_type, pathway, KO = "id") %>% 
+  write_tsv("data/reference/ontology/kegg.tsv")
+
+kegg_module_ontology <- kegg_modules %>% 
+  select(module = "name", KO = "ko") %>% 
+  write_tsv("kegg_modules.tsv")
 
 #foam_hmm <- read_tsv("data/FOAM/S3_sixframe_summarized.tsv")
 
 foam_ontology <- read_tsv("data/reference/FOAM-onto_rel1.tsv")
 
-level <- sym("L2")
 
-foam2 <- foam_ontology %>% 
+#make kegg match the FOAM layout
+kegg_ontology <- kegg %>% 
+  select()
+  
+
+
+foam2 <- kegg_module_ontology %>% 
   gather("level","group", -c(KO)) %>% 
   group_by(level) %>% 
   mutate(total = n()) %>% 
@@ -416,21 +432,77 @@ fisher <- joined_kegg %>%
   filter(!is.na(sample)) %>% 
   #select(sample, L1, L2,n_in,n_out,meta_total,meta_prop,meta_in,meta_out,OR) %>% 
   unique() %>% 
-  ungroup %>% group_by(sample, level, group) %>% 
-  mutate(fisher = list(fisher.test(matrix(c(meta_in,n_in,meta_out,n_out),nrow=2,ncol=2))),
-         fisher.p = fisher[[1]]$p.value,
-         fisher.OR = fisher[[1]]$estimate,
-         fisher.ci.lower = fisher[[1]]$conf.int[1],
-         fisher.ci.upper = fisher[[1]]$conf.int[2]) %>% 
-  select(sample, level, group, fisher, fisher.p, fisher.OR, fisher.ci.lower, fisher.ci.upper, OR) %>% 
+  ungroup %>% group_by(sample, level, group) %>%
+  rowwise() %>% 
+  mutate(contingency_table = list(matrix(c(meta_in,n_in,meta_out,n_out),nrow=2)),
+         fisher = list(fisher.test(contingency_table)),
+         fisher.p = fisher$p.value,
+         fisher.OR = fisher$estimate,
+         fisher.ci.lower = fisher$conf.int[1],
+         fisher.ci.upper = fisher$conf.int[2]) %>% 
+  select(sample, level, group, contingency_table, fisher, fisher.p, fisher.OR, fisher.ci.lower, fisher.ci.upper, OR) %>% 
   unique() %>% 
   ungroup() %>% group_by(sample, level) %>%
   mutate(p.fdr = p.adjust(fisher.p,method = "fdr"))
 
 
-fisher %>% 
+fisher_for_plot <- fisher %>% 
+  mutate(neg_log10P = -log10(fisher.p)) %>% 
+  ungroup() %>% group_by(level) %>% 
+  top_n(10,neg_log10P)
+
+
+
+l1_data <- fisher_for_plot %>% 
+  filter(level == "L1") %>% 
+  rename(L1 = "group") %>% 
+  top_n(10,neg_log10P) %>% 
+  mutate(L1 = str_remove(L1, "[0-9]*_"))
+  
+l2_data <- fisher_for_plot %>% 
+  filter(level == "L2") %>% 
+  rename(L2 = "group") %>% 
+  top_n(10,neg_log10P) %>% 
+  left_join(foam_ontology %>% select(L1, L2) %>% unique()) %>% 
+  mutate(L1 = str_remove(L1, "[0-9]*_"))
+  
+l3_data <- fisher_for_plot %>% 
+  filter(level == "L3") %>% 
+  rename(L3 = "group") %>% 
+  top_n(10,neg_log10P) %>% 
+  left_join(foam_ontology %>% select(L1, L2, L3) %>% unique()) %>% 
+  mutate(L1 = str_remove(L1, "[0-9]*_"),
+         levels_above = paste(L1,L2, sep = ";\n"))
+
+
+
+(L1_plot <- l1_data %>% ggplot(aes(neg_log10P,reorder(L1,neg_log10P))) +
+  geom_bar(stat = "identity") +
+  labs(y = NULL, x= "-log10(P-value)", title = "Level 1") +
+    theme_bw()
+)
+
+(L2_plot <- l2_data %>% ggplot(aes(neg_log10P,reorder(L2,neg_log10P), fill = L1)) +
+  geom_bar(stat = "identity") +
+  labs(y = NULL, x= "-log10(P-value)", title = "Level 2") +
+    theme_bw() +
+    theme(legend.position = c(0.8,0.2),)
+)
+
+(L3_plot <- l3_data %>% ggplot(aes(neg_log10P,reorder(L3,neg_log10P), fill = levels_above)) +
+  geom_bar(stat = "identity") +
+  labs(y = NULL, x= "-log10(P-value)", title = "Level 3", fill = NULL) +
+    theme_bw() #+
+    #theme(legend.position = "bottom")
+)
+
+
+(combined_plot <- L1_plot / L2_plot) + ggsave("c:/Users/eande/Desktop/enrichment.png",type = "cairo", width = 6, height = 4, scale = 1.5)
+
+
+ fisher %>% 
   filter(fisher.OR > 1) %>% 
-  ggplot(aes(fisher.OR, reorder(L2,fisher.OR), color = p.fdr < 0.05)) +
+  ggplot(aes(fisher.OR, reorder(group,fisher.OR), color = p.fdr < 0.05)) +
   geom_point() +
   geom_errorbarh(aes(xmin = fisher.ci.lower, xmax = fisher.ci.upper)) +
   coord_cartesian(xlim = c(0,25)) +
