@@ -1,0 +1,4 @@
+scratch: /scratch/$USER/
+work_dir: /work/$USER/meta_snakemake/
+raw_dir: raw_data
+qc_dir: data/qc_sequence_files
