@@ -338,6 +338,7 @@ rule humann:
             --input {wildcards.sample}_combined.fastq \
             --output {wildcards.sample}/
 
+        mkdir -p {output.humann_output}
         cp {wildcards.sample}/* {output.humann_output}/
         #rm -rf {config[scratch]} || exit $?
 
