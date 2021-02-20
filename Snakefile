@@ -2,9 +2,11 @@ import os
 import re
 from snakemake.utils import R
 
+configfile: "config.yaml"
+
 #Location of raw files
-raw_seq_folder = "raw_data"
-qc_seq_folder = "data/qc_sequence_files"
+raw_seq_folder = config["raw_dir"]
+qc_seq_folder = config["qc_dir"]
 
 #Cleanup file names and make sample list
 file_list=[f for f in sorted(os.listdir(raw_seq_folder)) if (str(f))[-9:] == ".fastq.gz"]
@@ -304,9 +306,9 @@ rule humann:
     output:
         humann_output = directory("data/humann3/{sample}")
     params:
-        scratch = "/scratch/$USER/"
+        mem_use = "maximum"
     conda: "code/master_env.yaml"
-    resources: cpus=8, mem_mb=500000, time_min=1440, mem_gb = 500
+    resources: cpus=63, mem_mb=800000, time_min=1440, mem_gb = 800
     shell:
         """
 
@@ -318,12 +320,17 @@ rule humann:
         #          --protein-database {input.PROT_fol} \
         #          --input data/qc_sequence_files/{wildcards.sample}_combined.fastq.gz \
 
-        mkdir -p {params.scratch} || exit $?
-        cp -r {input.NUC_fol}*  {params.scratch}db/  || exit $?
-        cp data/qc_sequence_files/{wildcards.sample}_combined.fastq {params.scratch}
-        cd {params.scratch}
+        mkdir -p {config[scratch]} || exit $?
+        cp -r {input.NUC_fol}*  {config[scratch]}db/  || exit $?
+
+        cp data/qc_sequence_files/{wildcards.sample}_combined.fastq {config[scratch]}
+        rm data/qc_sequence_files/{wildcards.sample}_combined.fastq
+
+        cd {config[scratch]}
 
         humann3 --bypass-nucleotide-index \
+            --threads {resources.cpus} \
+            --memory-use {params.mem_use} \
             --taxonomic-profile {input.bracken_mpa} \
             --nucleotide-database ./db/ \
             --protein-database ./db/protein_database/ \
@@ -332,9 +339,7 @@ rule humann:
             --output {wildcards.sample}/
 
         cp {wildcards.sample}/* {output.humann_output}/
-        rm -rf {params.scratch} || exit $?
-
-        rm data/qc_sequence_files/{wildcards.sample}_combined.fastq.gz
+        #rm -rf {config[scratch]} || exit $?
 
         """
 
@@ -390,7 +395,7 @@ rule fastq_split:
 
         echo "Files split"
 
-        mv data/FOAM/six_frame_*.*.fasta data/FOAM/split/
+        mv  data/FOAM/six_frame_{wildcards.sample}-{wildcards.dir}.*.fasta data/FOAM/split/
         """
     #
     # """
@@ -421,7 +426,7 @@ rule foam_raw:
     resources: cpus=4, mem_mb=25000, time_min=28800
     shell:
         """
-        fp={{input.fasta}}
+        fp={input.fasta}
         fp2="${{fp%.fasta}}"
         num=${{fp2: -2}}
 
