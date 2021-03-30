@@ -47,7 +47,15 @@ rule all:
         expand("data/kraken2/{sample}_brackenReport.txt", sample = samples),
         expand("data/kraken2_euk/{sample}_brackenReport.txt", sample = samples),
         expand("data/kraken2/{sample}_brackenMpa.txt", sample = samples),
-        "data/humann3/S3_Fallen/"
+        expand("data/humann3/{sample}/", sample = samples),
+        expand("data/FOAM/{sample}_combined.rds", sample = samples)
+
+rule tax_profile:
+    input:
+        expand("data/kraken2/{sample}_report.txt", sample = samples),
+        expand("data/kraken2/{sample}_brackenReport.txt", sample = samples),
+        expand("data/kraken2_euk/{sample}_brackenReport.txt", sample = samples),
+        expand("data/kraken2/{sample}_brackenMpa.txt", sample = samples)
 
 rule fastqc_raw:
     input:
@@ -97,7 +105,8 @@ rule fastqc_trimmed:
 
 rule multiqc:
     input:
-        reports = expand("{qc_folder}/fastqc_reports/{sample}_{read_dir}_fastqc.html", qc_folder=qc_seq_folder, sample=samples, read_dir=read_dirs)
+        reports = expand("{qc_folder}/fastqc_reports/{sample}_{read_dir}_fastqc.html", qc_folder=qc_seq_folder, sample=samples, read_dir=read_dirs),
+        raw_fastqc = expand("raw_data/fastqc_reports/{sample}_{read_dir}_fastqc.html", sample=samples, read_dir=read_dirs)
     output: directory("results/sequence_quality")
     conda: "code/multiqc_env.yaml"
     shell:
@@ -110,12 +119,13 @@ rule megahit_assemble:
       f_reads = "data/qc_sequence_files/{sample}_R1.fastq.gz",
       r_reads = "data/qc_sequence_files/{sample}_R2.fastq.gz"
     output:
-        directory("data/assembly_megahit/{sample}")
+        results_dir = directory("data/assembly_megahit/{sample}"),
+        contigs = "data/assembly_megahit/{sample}/final.contigs.fa"
     conda: "code/master_env.yaml"
     resources: cpus=8, mem_mb=100000, time_min=1440, mem_bytes = 100000000000
     shell:
         """
-        megahit -m {resources.mem_bytes} -1 {input.f_reads} -2 {input.r_reads} -o {output}
+        megahit -m {resources.mem_bytes} -1 {input.f_reads} -2 {input.r_reads} -o {output.results_dir}
         """
 
 rule metaspades_assemble:
@@ -152,22 +162,6 @@ rule format_for_shogun:
         #cat data/shogun/input_fastqs/*.fasta >> data/shogun/combined_seqs.fasta
         """
 
-# rule shi7:
-#     input: "raw_data/{sample}_{direction}.fastq.gz"
-#     output:
-#         "data/shi7_out/combined_seqs.fna"
-#     conda:
-#         "code/master_env.yaml"
-#     shell:
-#         """
-#         mkdir data/shi7_out/input_files/
-#         cp {input} data/shi7_out/input_files
-#         gunzip data/shi7_out/input_files/*.fastq.gz
-#
-#         shi7 -i data/shi7_out/input_files/ -o data/shi7_out --adaptor Nextera --flash False --filter_length 50 -m 0
-#
-#         rm -rf data/shi7_out/input_files/
-#         """
 
 rule shogun_bt2: ###Need to get database setup
     input:
@@ -180,6 +174,7 @@ rule shogun_bt2: ###Need to get database setup
         """
         shogun pipeline --no-function -i {input.seqs} -d {input.db} -o {output} -a bowtie2 --threads {resources.cpus}
         """
+
 rule shogun_burst: ###Need to get database setup
     input:
         seqs="data/shogun/combined_samples.fasta",
@@ -192,7 +187,7 @@ rule shogun_burst: ###Need to get database setup
         shogun pipeline --no-function -i {input.seqs} -d {input.db} -o {output} -a burst --threads {resources.cpus}
         """
 
-rule kraken2: ##Run kraken2
+rule kraken2_gtdb: ##Run kraken2
     input:
         f_seq = "data/qc_sequence_files/{sample}_R1.fastq.gz",
         r_seq = "data/qc_sequence_files/{sample}_R2.fastq.gz"
@@ -203,7 +198,9 @@ rule kraken2: ##Run kraken2
         out = "data/kraken2/{sample}_out.txt",
         bracken = "data/kraken2/{sample}_bracken.txt",
         bracken_report = "data/kraken2/{sample}_brackenReport.txt",
-        bracken_mpa = "data/kraken2/{sample}_brackenMpa.txt"
+        bracken_mpa = "data/kraken2/{sample}_brackenMpa.txt",
+        unclass_f = "data/kraken2/{sample}_unclassified_1.fasta",
+        unlcass_r = "data/kraken2/{sample}_unclassified_2.fasta"
     conda: "code/master_env.yaml"
     resources: cpus=8, mem_mb=500000, time_min=1440, mem_gb = 500
     shell:
@@ -225,7 +222,7 @@ rule kraken2: ##Run kraken2
 rule kraken2_refseq: ##Run kraken2
     input:
         f_seq = "data/kraken2/{sample}_unclassified_1.fasta",
-        r_seq = "data/kraken2/{sample}_unclassified_1.fasta"
+        r_seq = "data/kraken2/{sample}_unclassified_2.fasta"
     params:
         db = "/work/akiledal/kraken"
     output:
@@ -267,32 +264,6 @@ rule humann_db_download:
         cd /work/akiledal/humann3/
         wget -nv -r -nH --cut-dirs=6 -nc ftp://ftp.tue.mpg.de/ebio/projects/struo2/GTDB_release95/humann3/uniref90/
         """
-
-# rule humann_db_download:
-#     output:
-#         NUC_DB = "/work/akiledal/humann3/nuc/genome_reps_filt_annot.fna.gz",
-#         PROT_DB = "/work/akiledal/humann3/prot/uniref90_201901.dmnd"
-#     shell:
-#         """
-#         cd /work/akiledal/humann3/nuc/
-#         # wget http://ftp.tue.mpg.de/ebio/projects/struo2/GTDB_release95/humann3/uniref90/all_genes_annot.1.bt2l
-#         # wget http://ftp.tue.mpg.de/ebio/projects/struo2/GTDB_release95/humann3/uniref90/all_genes_annot.2.bt2l
-#         # wget http://ftp.tue.mpg.de/ebio/projects/struo2/GTDB_release95/humann3/uniref90/all_genes_annot.3.bt2l
-#         # wget http://ftp.tue.mpg.de/ebio/projects/struo2/GTDB_release95/humann3/uniref90/all_genes_annot.4.bt2l
-#         # wget http://ftp.tue.mpg.de/ebio/projects/struo2/GTDB_release95/humann3/uniref90/all_genes_annot.rev.1.bt2l
-#         # wget http://ftp.tue.mpg.de/ebio/projects/struo2/GTDB_release95/humann3/uniref90/all_genes_annot.rev.2.bt2l
-#         # wget http://ftp.tue.mpg.de/ebio/projects/struo2/GTDB_release95/humann3/uniref90/genome_reps_filt_annot.faa.gz
-#         # wget http://ftp.tue.mpg.de/ebio/projects/struo2/GTDB_release95/humann3/uniref90/genome_reps_filt_annot.fna.gz
-#         # wget http://ftp.tue.mpg.de/ebio/projects/struo2/GTDB_release95/humann3/uniref90/genome_reps_filt_annot.tsv.gz
-#
-#         declare -a URL_LIST
-#         URL_LIST=(http://ftp.tue.mpg.de/ebio/projects/struo2/GTDB_release95/humann3/uniref90/all_genes_annot.1.bt2l http://ftp.tue.mpg.de/ebio/projects/struo2/GTDB_release95/humann3/uniref90/all_genes_annot.2.bt2l http://ftp.tue.mpg.de/ebio/projects/struo2/GTDB_release95/humann3/uniref90/all_genes_annot.3.bt2l http://ftp.tue.mpg.de/ebio/projects/struo2/GTDB_release95/humann3/uniref90/all_genes_annot.4.bt2l http://ftp.tue.mpg.de/ebio/projects/struo2/GTDB_release95/humann3/uniref90/all_genes_annot.rev.1.bt2l http://ftp.tue.mpg.de/ebio/projects/struo2/GTDB_release95/humann3/uniref90/all_genes_annot.rev.2.bt2l http://ftp.tue.mpg.de/ebio/projects/struo2/GTDB_release95/humann3/uniref90/genome_reps_filt_annot.faa.gz http://ftp.tue.mpg.de/ebio/projects/struo2/GTDB_release95/humann3/uniref90/genome_reps_filt_annot.fna.gz http://ftp.tue.mpg.de/ebio/projects/struo2/GTDB_release95/humann3/uniref90/genome_reps_filt_annot.tsv.gz)
-#
-#         echo $URL_LIST | xargs -n 1 -P 8 wget -q
-#
-#         cd ../prot/
-#         wget http://ftp.tue.mpg.de/ebio/projects/struo2/GTDB_release95/humann3/uniref90/protein_database/uniref90_201901.dmnd
-#         """
 
 rule humann:
     input:
@@ -340,11 +311,9 @@ rule humann:
 
         mkdir -p {output.humann_output}
         cp {wildcards.sample}/* {output.humann_output}/
-        #rm -rf {config[scratch]} || exit $?
+        rm -rf {config[scratch]} || exit $?
 
         """
-
-
 
 
 #Predict genes with prodigal
@@ -376,6 +345,7 @@ rule fastq_split:
         split_six = expand("data/FOAM/split/six_frame_{sample}-{dir}.{num}.fasta", num = splits, allow_missing=True)
     params:
         nsplit = 20
+    resources: cpus=1, mem_mb=100000, time_min=240
     shell:
         """
         #transeq doesn't seem to support zipped fastqs
@@ -450,28 +420,30 @@ rule foam_raw:
 
 rule foam_concat:
     input:
-        fasta= expand("data/FOAM/{sample}-{dir}.{num}_sixframe_summary.txt", num = splits, allow_missing=True)
+        sixframe_simp = expand("data/FOAM/{sample}-{dir}.{num}_sixframe_summary.txt", num = splits, allow_missing=True)
     output: "data/FOAM/{sample}-{dir}_sixframe_summary.txt"
+    params:
+        rm_file = expand("data/FOAM/{sample}-{dir}.{num}_sixframe.txt", num = splits, allow_missing=True)
     conda: "code/master_env.yaml"
     resources: cpus=1, mem_mb=16000, time_min=30
     shell:
         """
-        #fp={{input.fasta}}
-        #fp2="${{fp%.fasta}}"
-        #num=${{fp2: -2}}
+        #remove unsimplified split hmmer results
+        for file in {params.rm_file}
+        do
+            rm -f $file
+        done
 
-        #rm data/FOAM/{wildcards.sample}_{wildcards.dir}_$num_sixframe.txt
-
-        #concatenate split files
-        for file in {input}
+        #concatenate split simplified hmmer/FOAM results
+        for file in {input.sixframe_simp}
         do
             cat $file >> {output}
         done
 
         #delete split files
-        for file in {input}
+        for file in {input.sixframe_simp}
         do
-            rm $file
+            rm -f $file
         done
         """
 
@@ -510,8 +482,8 @@ rule foam_concat:
 
 rule foam_process:
     input:
-        foam_f = "data/FOAM/{sample}_R1_sixframe_summary.txt",
-        foam_r = "data/FOAM/{sample}_R2_sixframe_summary.txt"
+        foam_f = "data/FOAM/{sample}-R1_sixframe_summary.txt",
+        foam_r = "data/FOAM/{sample}-R2_sixframe_summary.txt"
     output:
         combined="data/FOAM/{sample}_combined.rds"
     resources: cpus=6, mem_mb=200000, time_min=28800
@@ -570,10 +542,8 @@ rule foam_process:
         """
 
 
-
-
-
-
+### DELETE ALL RESULTS ###
+### ONLY USE TO RE-BUILD ALL RESULTS ###
 
 rule clean:
     shell:
