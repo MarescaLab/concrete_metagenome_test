@@ -29,9 +29,16 @@ library(tidyverse)
 
 names <- c("qseqid", "sseqid", "pident", "length", "mismatch", "gapopen", "qstart", "qend", "sstart", "send", "evalue", "bitscore")
 
-alignment <- read_tsv("data/shogun/burst/wol_burst_alignment.b6",col_names = names)
+alignment <- read_tsv("data/shogun/burst/wol_burst_alignment.b6",col_names = names) %>% 
+  select(qseqid) %>% mutate(aligner = "burst")
 
-s3_reads <- alignment %>% 
+bt2_names <- c("qseqid", "flag", "rname", "strand", "pos", "qwidth", "mapq", "cigar", "mrnm", "mpos", "isize", "seq", "qual")
+alignment_bowtie2 <- read_delim("data/shogun/bt2/alignment.bowtie2.sam", "\t", escape_double = FALSE, trim_ws = TRUE, col_names = bt2_names) %>% 
+  select(qseqid) %>% mutate(aligner = "bt2")
+
+align_merged <- bind_rows(alignment,alignment_bowtie2)
+
+s3_reads <- align_merged %>% 
   filter(str_detect(qseqid,"S3_Fallen")) %>% 
   mutate(
     dir = case_when(
@@ -43,7 +50,7 @@ S3_f_total <- Biostrings::readDNAStringSet("data/qc_sequence_files/S3_Fallen_R1.
 S3_r_total <- Biostrings::readDNAStringSet("data/qc_sequence_files/S3_Fallen_R2.fastq.gz",format = "fastq") %>% length()
 
 wol_s3_summary <- s3_reads %>% 
-  group_by(dir) %>% 
+  group_by(dir, aligner) %>% 
   summarise(num_classified = n()) %>% 
   mutate(
     total_reads = case_when(
@@ -57,6 +64,8 @@ wol_s3_summary <- s3_reads %>%
 Kraken metacodeR
 ```{r}
 bracken_raw <- read_tsv("data/braken_full_tax.tsv",col_names = c("tax","count"))
+
+kraken_raw <- read_tsv("data/kraken")
 
 bracken <- bracken_raw %>%
   mutate(root = str_match(tax,"x_.*"),
@@ -241,8 +250,7 @@ kraken_gtdb <- kraken %>% separate(tax,into = tax_split,sep = "  ") %>%
 ##Read in refseq classified report
 #######
 
-kraken <- read_tsv("h:/concrete_metagenome_test/data/kraken2_euk/S3_Fallen_brackenReport.txt", 
-                   col_names = cols,trim_ws = F)
+kraken <- read_tsv("h:/concrete_metagenome_test/data/kraken2_euk/S3_Fallen_brackenReport.txt", col_names = cols,trim_ws = F)
 
 ranks_and_num <- unique(kraken$rank) %>% 
   data.frame(rank = .) %>% 
@@ -292,6 +300,23 @@ kraken_otu <- kraken_gtdb %>%
   mutate(rel.abund = reads/sum(reads)) %>% 
   filter(rel.abund > 0)
 
+kraken_taxa_split <- kraken_otu %>% separate(taxonomy,into = c("kingdom","phylum","class","order","family","genus","species"),sep = "\\|")
+
+kingdom <- kraken_taxa_split %>% group_by(kingdom) %>% summarise(rel.abund = sum(rel.abund))
+  
+phylum <- kraken_taxa_split %>% group_by(kingdom,phylum) %>% summarise(rel.abund = sum(rel.abund))
+  
+class <- kraken_taxa_split %>% group_by(kingdom, phylum, class) %>% summarise(rel.abund = sum(rel.abund))
+  
+order <- kraken_taxa_split %>% group_by(kingdom, phylum, class, order) %>% summarise(rel.abund = sum(rel.abund))
+  
+family <- kraken_taxa_split %>% group_by(kingdom, phylum, class, order, family) %>% summarise(rel.abund = sum(rel.abund))
+  
+genus <- kraken_taxa_split %>% group_by(kingdom, phylum, class, order, family, genus) %>% summarise(rel.abund = sum(rel.abund))
+  
+species <- kraken_taxa_split %>% group_by(kingdom, phylum, class, order, family, genus) %>% summarise(rel.abund = sum(rel.abund))
+
+
 ```
 
 
@@ -318,9 +343,31 @@ obj$data$tax_abund$S3 <- obj$data$tax_abund$rel.abund
 
 
 #All domains
+# (tree <- obj %>%
+#     taxa::filter_taxa(S3 > 0.001) %>%
+#     #filter_taxa(taxon_names %in% c("Viruses", "Bacteria", "Archaea", "Eukaryota"), subtaxa = TRUE) %>% 
+#     heat_tree(node_label = taxon_names,
+#           node_size = S3,
+#           node_size_range = c(0.00175,0.045),
+#           node_label_size_range = c(.015,.025),
+#           node_size_axis_label = "OTU count",
+#           initial_layout = "reingold-tilford", layout = "davidson-harel",
+#           overlap_avoidance = 10,
+#           node_label_max = 75,
+#           node_color = S3,
+#           node_color_range = c("gray","gray","gray"),
+#           node_color_axis_label = "Relative abundance")
+# )
+# ggsave(plot = tree,filename = "results/figures/kraken2_gtdb_combined.pdf", device = cairo_pdf(), width = 12, height = 12, dpi = 600)
+
+#obj2 <- obj %>% filter_taxa(taxon_ranks == "g", supertaxa = TRUE, reassign_obs = TRUE, drop_obs = TRUE)
+
+#obj3 <- obj %>% filter_taxa(S3 > 0.001)
+
 (tree <- obj %>%
     taxa::filter_taxa(S3 > 0.001) %>%
     #filter_taxa(taxon_names %in% c("Viruses", "Bacteria", "Archaea", "Eukaryota"), subtaxa = TRUE) %>% 
+    taxa::filter_taxa(taxon_ranks == "g", supertaxa = TRUE) %>%
     heat_tree(node_label = taxon_names,
           node_size = S3,
           node_size_range = c(0.00175,0.045),
@@ -333,7 +380,8 @@ obj$data$tax_abund$S3 <- obj$data$tax_abund$rel.abund
           node_color_range = c("gray","gray","gray"),
           node_color_axis_label = "Relative abundance")
 )
-ggsave(plot = tree,filename = "results/figures/kraken2_gtdb_combined.pdf", device = cairo_pdf(), width = 12, height = 12, dpi = 600)
+ggsave(plot = tree,filename = "results/figures/finerkraken2_gtdb_combined.pdf", device = cairo_pdf(), width = 12, height = 12, dpi = 600)
+
 
 ```
 
