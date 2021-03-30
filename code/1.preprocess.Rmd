@@ -636,13 +636,13 @@ megahit_contigs <- readDNAStringSet("data/assembly_megahit/S3_Fallen/final.conti
 
 megahit_df <- as.data.frame(megahit_contigs) %>% 
   rownames_to_column("header") %>% 
-  rename(sequence = "x") %>%
+  dplyr::rename(sequence = "x") %>%
   separate("header",into=c("name","flag","coverage","length"),sep = " ") %>% 
   mutate(across(c("flag","coverage","length"),~as.numeric(str_remove(.,"^[a-z]*="))),
          assembler = "megahit")
 
-metaspades_df <- as.data.frame(contigs) %>% 
-  rename(sequence = "x") %>%
+metaspades_df <- as.data.frame(metaspades_contigs) %>% 
+  dplyr::rename(sequence = "x") %>%
   rownames_to_column("contig") %>% 
   separate("contig",into = as.character(1:6),sep = "_") %>% 
   select(name = "2",
