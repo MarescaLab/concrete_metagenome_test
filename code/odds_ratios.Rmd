@@ -116,10 +116,14 @@ for (folder in basename(list.dirs("data/GHOSTkoala")[-1])){
   tax_summary <- read_tsv(file.path("data/GHOSTkoala",folder,"user.out.top"),col_names = F) %>% 
     select(genus = "X5") %>% 
     group_by(genus) %>% 
-    summarise(abund = n())
+    summarise(abund = n()) %>% 
+    mutate(sample = folder)
   
   tax_combined <- bind_rows(tax_combined,tax_summary)
 }
+
+ghost_combined %>% write_tsv("data/GHOSTkoala/combined_counts.tsv")
+
 ```
 
 
@@ -343,10 +347,11 @@ tail -n+4 S3_fallen.txt | sed 's/ * / /g' | cut -f 1-10 -d " " > S3_fallen_mod.t
 ```
 
 
-```{r fig.height=12, fig.width=12}
+```{r}
 library(data.table)
 library(vroom)
 library(tidyverse)
+library(patchwork)
 
 names <- c(
 		"target.name",
@@ -376,6 +381,9 @@ foam_hmm <- read_rds("h:/concrete_metagenome_test/data/FOAM/S3_Fallen_combined.r
   group_by(sample,id) %>% 
   summarise(meta_abund = sum(meta_abund))
 
+ghost_combined <- read_tsv("data/GHOSTkoala/combined_counts.tsv")
+
+
 kegg <- read_tsv("data/reference/kegg.tsv")
 mod_info <- read_tsv("data/reference/KEGG_modules_info.tsv",col_names = c("module","name")) %>% distinct()
 kegg_modules <- read_tsv("data/reference/kegg_module_mem.tsv") %>% left_join(mod_info)
@@ -389,9 +397,6 @@ kegg_module_ontology <- kegg_modules %>%
   select(module = "name", KO = "ko") %>% 
   write_tsv("kegg_modules.tsv")
 
-#foam_hmm <- read_tsv("data/FOAM/S3_sixframe_summarized.tsv")
-
-foam_ontology <- read_tsv("data/reference/FOAM-onto_rel1.tsv")
 
 
 #make kegg match the FOAM layout
@@ -400,7 +405,15 @@ kegg_ontology <- kegg %>%
   
 
 
-foam2 <- kegg_module_ontology %>% 
+###Read in the ontologies
+
+foam_ontology <- read_tsv("data/reference/ontology/FOAM-onto_rel1.tsv")
+kegg_ontology <- read_tsv("data/reference/ontology/kegg.tsv")
+kegg_module_ontology <- read_tsv("data/reference/ontology/kegg_modules.tsv")
+
+
+
+foam2 <- foam_ontology %>% 
   gather("level","group", -c(KO)) %>% 
   group_by(level) %>% 
   mutate(total = n()) %>% 
@@ -410,13 +423,14 @@ foam2 <- kegg_module_ontology %>%
   rename(id = "KO") %>% 
   filter(!is.na(group))
 
-
-meta_kegg <- foam_hmm
+#meta_kegg <- ghost_combined 
+#meta_kegg <- foam_hmm
+meta_kegg <- humann_for_OR
 samples <- unique(meta_kegg$sample)
 
 
-joined_kegg <- foam2 %>% 
-  left_join(meta_kegg) %>% 
+joined_kegg <- foam2 %>% #start with ontology
+  left_join(meta_kegg) %>% #join KO abundances
   ungroup() %>% 
   mutate(meta_abund = replace_na(meta_abund,0)) %>% 
   group_by(sample,level) %>% 
@@ -435,7 +449,7 @@ fisher <- joined_kegg %>%
   ungroup %>% group_by(sample, level, group) %>%
   rowwise() %>% 
   mutate(contingency_table = list(matrix(c(meta_in,n_in,meta_out,n_out),nrow=2)),
-         fisher = list(fisher.test(contingency_table)),
+         fisher = list(fisher.test(contingency_table, alternative = "greater")),
          fisher.p = fisher$p.value,
          fisher.OR = fisher$estimate,
          fisher.ci.lower = fisher$conf.int[1],
@@ -446,10 +460,25 @@ fisher <- joined_kegg %>%
   mutate(p.fdr = p.adjust(fisher.p,method = "fdr"))
 
 
+fisher %>% 
+  mutate(neg_log10P = -log10(fisher.p)) %>% 
+  ggplot(aes(neg_log10P, fisher.OR, color = )) + 
+  geom_point()
+
+fisher %>% 
+  filter(level == "L2") %>% 
+  rename(L2 = "group") %>% 
+  left_join(foam_ontology %>% select(-KO)) %>% distinct() %>% 
+  ggplot(aes(L2,fisher.OR)) +
+  geom_bar(stat="identity") +
+  facet_wrap(L1 ~.)
+
+
+
 fisher_for_plot <- fisher %>% 
   mutate(neg_log10P = -log10(fisher.p)) %>% 
   ungroup() %>% group_by(level) %>% 
-  top_n(10,neg_log10P)
+  top_n(20,neg_log10P)
 
 
 
@@ -462,7 +491,7 @@ l1_data <- fisher_for_plot %>%
 l2_data <- fisher_for_plot %>% 
   filter(level == "L2") %>% 
   rename(L2 = "group") %>% 
-  top_n(10,neg_log10P) %>% 
+  top_n(20,neg_log10P) %>% 
   left_join(foam_ontology %>% select(L1, L2) %>% unique()) %>% 
   mutate(L1 = str_remove(L1, "[0-9]*_"))
   
@@ -478,16 +507,16 @@ l3_data <- fisher_for_plot %>%
 
 (L1_plot <- l1_data %>% ggplot(aes(neg_log10P,reorder(L1,neg_log10P))) +
   geom_bar(stat = "identity") +
-  labs(y = NULL, x= "-log10(P-value)", title = "Level 1") +
+  labs(y = NULL, x= "-log10(P-value)", title = "FOAM Level 1 Enrichment") +
     theme_bw()
-)
+) + ggsave("c:/Users/eande/Desktop/enrichment1.png",type = "cairo", width = 5, height = 3)
 
 (L2_plot <- l2_data %>% ggplot(aes(neg_log10P,reorder(L2,neg_log10P), fill = L1)) +
   geom_bar(stat = "identity") +
   labs(y = NULL, x= "-log10(P-value)", title = "Level 2") +
     theme_bw() +
     theme(legend.position = c(0.8,0.2),)
-)
+) + ggsave("c:/Users/eande/Desktop/enrichment2.png",type = "cairo", width = 6, height = 8, scale = 1.5)
 
 (L3_plot <- l3_data %>% ggplot(aes(neg_log10P,reorder(L3,neg_log10P), fill = levels_above)) +
   geom_bar(stat = "identity") +
@@ -515,24 +544,75 @@ fisher %>% ggplot(aes())
 
 
   
-fisher %>% 
-  filter(fisher.p <= 0.05) %>% 
-  ggplot(aes(fisher.OR, meta_prop,color = L1)) +
-  geom_point() +
-  geom_errorbarh(aes(xmin = fisher.ci.lower, xmax = fisher.ci.upper)) +
-  coord_cartesian(xlim = c(0,10)) +
-  geom_vline(xintercept = 1) +
-  theme_bw()
+# fisher %>% 
+#   filter(fisher.p <= 0.05) %>% 
+#   ggplot(aes(fisher.OR, meta_prop,color = L1)) +
+#   geom_point() +
+#   geom_errorbarh(aes(xmin = fisher.ci.lower, xmax = fisher.ci.upper)) +
+#   coord_cartesian(xlim = c(0,10)) +
+#   geom_vline(xintercept = 1) +
+#   theme_bw()
 
 
 ```
 
 
-From unassembled reads, translated into all 6 frames
-```{bash}
 
-transeq S3_Fallen_R1.fastq -outseq six_frame_S3_f.fasta -frame=6
- hmmsearch --tblout s3_sixframe.txt --cpu 8 --domT 14 -o s3_sixframe.hm ../reference/FOAM-hmm_rel1.hmm six_frame_S3_f.fasta
+## Humann data
+
+```{r}
+
+
+uniref_to_kegg <- read_tsv("C:/Users/eande/Downloads/full_mapping_v201901/map_ko_uniref90.txt.gz",col_names = FALSE) %>% 
+  pivot_longer(-X1,values_to = "uniref") %>% 
+  select(KO = "X1",uniref)
+
+
+uniref_to_kegg <- read_tsv("C:/Users/eande/Downloads/full_mapping_v201901/map_uniref90_name.txt.bz2",col_names = FALSE,n_max = 2000) #%>% 
+  pivot_longer(-X1,values_to = "uniref") %>% 
+  select(KO = "X1",uniref)
+
+
+path_abund <- read_tsv("data/humann3/S3_Fallen/S3_Fallen_humann_pathabundance.tsv") 
+
+path_abund <- path_abund %>% 
+  mutate(S3_Fallen_humann_Abundance = round(S3_Fallen_humann_Abundance,2))
+
+
+path_cov <- read_tsv("data/humann3/S3_Fallen/S3_Fallen_humann_pathcoverage.tsv")
+
+path_gfam <- read_tsv("data/humann3/S3_Fallen/S3_Fallen_humann_genefamilies.tsv") %>% 
+  separate(into = c("uniref","tax"), sep = "\\|",fill = "right" ,col = `# Gene Family`)
+
+
+
+gfam_ko <- path_gfam %>% 
+  left_join(uniref_to_kegg)
+
+
+ko_humann <- gfam_ko %>% 
+  filter(!is.na(KO))  %>% 
+  left_join(ko_info %>% rename(KO = "ko")) %>% 
+  left_join(kegg_ontology)  %>% 
+  left_join(foam_ontology) %>% 
+  left_join(kegg_module_ontology)
+
+
+ko_humann_no_tax <- gfam_ko %>% 
+  filter(!is.na(KO),
+         is.na(tax)) %>% 
+  left_join(ko_info %>% rename(KO = "ko")) %>% 
+  left_join(kegg_ontology) %>% 
+  left_join(foam_ontology) %>% left_join(kegg_module_ontology)
+
+
+humann_for_OR <- ko_humann_no_tax %>% 
+  select(id = KO, meta_abund = "S3_Fallen_humann_Abundance-RPKs") %>% 
+  distinct() %>% 
+  mutate(sample = "S3_Fallen",
+         meta_abund = round((meta_abund * (1/min(meta_abund)))* 10))
+
+
 ```
 
 
@@ -541,3 +621,19 @@ transeq S3_Fallen_R1.fastq -outseq six_frame_S3_f.fasta -frame=6
 
 
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+ 
