@@ -218,14 +218,14 @@ library(tidyverse)
 
 cols <- c("ra_and_subs","reads_and_subs","reads","rank","NCBI_id","tax")
 
-kraken <- read_tsv("h:/concrete_metagenome_test/data/kraken2/S3_Fallen_brackenReport.txt", 
+kraken <- read_tsv("data/kraken2/S3_Fallen_brackenReport.txt", 
                    col_names = cols,trim_ws = F)
 
 ranks_and_num <- unique(kraken$rank) %>% 
   data.frame(rank = .) %>% 
   mutate(num_rank = row_number())
 
-tax_split <- ranks_and_num %>% filter(rank != "U") %>% pull(rank)
+tax_split <- ranks_and_num %>% filter(rank != "U") %>% pull(rank) %>% as.character()
 
 #Fill in higher level taxonomy and calculate relative abundances without sub-taxa
 kraken_gtdb <- kraken %>% separate(tax,into = tax_split,sep = "  ") %>%
@@ -250,13 +250,13 @@ kraken_gtdb <- kraken %>% separate(tax,into = tax_split,sep = "  ") %>%
 ##Read in refseq classified report
 #######
 
-kraken <- read_tsv("h:/concrete_metagenome_test/data/kraken2_euk/S3_Fallen_brackenReport.txt", col_names = cols,trim_ws = F)
+kraken <- read_tsv("data/kraken2_euk/S3_Fallen_brackenReport.txt", col_names = cols,trim_ws = F)
 
 ranks_and_num <- unique(kraken$rank) %>% 
   data.frame(rank = .) %>% 
   mutate(num_rank = row_number())
 
-tax_split <- ranks_and_num %>% filter(rank != "U") %>% pull(rank)
+tax_split <- ranks_and_num %>% filter(rank != "U") %>% pull(rank) %>% as.character()
 
 #Fill in higher level taxonomy and calculate relative abundances without sub-taxa
 kraken_refseq <- kraken %>% separate(tax,into = tax_split,sep = "  ") %>%
@@ -300,7 +300,8 @@ kraken_otu <- kraken_gtdb %>%
   mutate(rel.abund = reads/sum(reads)) %>% 
   filter(rel.abund > 0)
 
-kraken_taxa_split <- kraken_otu %>% separate(taxonomy,into = c("kingdom","phylum","class","order","family","genus","species"),sep = "\\|")
+
+kraken_taxa_split <- kraken_otu %>% separate(taxonomy,into = c("root","kingdom","phylum","class","order","family","genus","species"),sep = "\\|")
 
 kingdom <- kraken_taxa_split %>% group_by(kingdom) %>% summarise(rel.abund = sum(rel.abund))
   
@@ -317,19 +318,18 @@ genus <- kraken_taxa_split %>% group_by(kingdom, phylum, class, order, family, g
 species <- kraken_taxa_split %>% group_by(kingdom, phylum, class, order, family, genus) %>% summarise(rel.abund = sum(rel.abund))
 
 
+kraken_otu_genus <- genus %>% 
+  mutate(taxonomy = paste("r__root",kingdom, phylum, class, order, family, genus,sep = "|"),
+         taxonomy = str_remove(taxonomy,"[NA|]+$"))
+
 ```
 
 
 Plot the merged table with metacodeR
 ```{r}
-library(readr)
 library(metacoder)
-library(ggplot2)
-library(dplyr)
-library(ragg)
 
-
-obj <- parse_tax_data(kraken_otu, class_cols = "taxonomy", class_sep = "|",
+obj <- parse_tax_data(kraken_otu_genus, class_cols = "taxonomy", class_sep = "|",
                       class_key = c(tax_rank = "taxon_rank", tax_name = "taxon_name"),
                       class_regex = "^(.+)__(.*)$")
 
@@ -342,32 +342,8 @@ obj$data$tax_abund <- calc_taxon_abund(obj, "tax_data")
 obj$data$tax_abund$S3 <- obj$data$tax_abund$rel.abund
 
 
-#All domains
-# (tree <- obj %>%
-#     taxa::filter_taxa(S3 > 0.001) %>%
-#     #filter_taxa(taxon_names %in% c("Viruses", "Bacteria", "Archaea", "Eukaryota"), subtaxa = TRUE) %>% 
-#     heat_tree(node_label = taxon_names,
-#           node_size = S3,
-#           node_size_range = c(0.00175,0.045),
-#           node_label_size_range = c(.015,.025),
-#           node_size_axis_label = "OTU count",
-#           initial_layout = "reingold-tilford", layout = "davidson-harel",
-#           overlap_avoidance = 10,
-#           node_label_max = 75,
-#           node_color = S3,
-#           node_color_range = c("gray","gray","gray"),
-#           node_color_axis_label = "Relative abundance")
-# )
-# ggsave(plot = tree,filename = "results/figures/kraken2_gtdb_combined.pdf", device = cairo_pdf(), width = 12, height = 12, dpi = 600)
-
-#obj2 <- obj %>% filter_taxa(taxon_ranks == "g", supertaxa = TRUE, reassign_obs = TRUE, drop_obs = TRUE)
-
-#obj3 <- obj %>% filter_taxa(S3 > 0.001)
-
 (tree <- obj %>%
     taxa::filter_taxa(S3 > 0.001) %>%
-    #filter_taxa(taxon_names %in% c("Viruses", "Bacteria", "Archaea", "Eukaryota"), subtaxa = TRUE) %>% 
-    taxa::filter_taxa(taxon_ranks == "g", supertaxa = TRUE) %>%
     heat_tree(node_label = taxon_names,
           node_size = S3,
           node_size_range = c(0.00175,0.045),

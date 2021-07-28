@@ -57,6 +57,12 @@ rule tax_profile:
         expand("data/kraken2_euk/{sample}_brackenReport.txt", sample = samples),
         expand("data/kraken2/{sample}_brackenMpa.txt", sample = samples)
 
+rule assemble:
+    input:
+        expand("data/assembly_metaspades/{sample}", sample = samples),
+        expand("data/assembly_megahit/{sample}", sample = samples),
+        expand("data/assembly_megahit/{sample}/final.contigs.fa",sample = samples)
+
 rule fastqc_raw:
     input:
         #fastqs=expand("{raw_folder}/{sample}_{read_dir}.fastq.gz",raw_folder = raw_seq_folder, sample=samples, read_dir=read_dirs)
@@ -90,6 +96,43 @@ rule trim_galore:
         mv data/qc_sequence_files/{wildcards.sample}_val_2.fq.gz {output.r_fq}
         """
 
+#This hasn't been tested/run on the data as of 5/19/21 but shoould run and ideally should be included.
+# rule phix_removal:
+#     input:
+#         phix="data/reference/phiX/phiX.fasta",
+#         f_fq="data/qc_sequence_files/{sample}_val_1.fq.gz",
+#         r_fq="data/qc_sequence_files/{sample}_val_2.fq.gz"
+#     output:
+#         f_fq="data/qc_sequence_files/{sample}_R1.fastq.gz",
+#         r_fq="data/qc_sequence_files/{sample}_R2.fastq.gz"
+#     conda: "code/bwa_env.yaml"
+#     shell:
+#         """
+#         mkdir -p data/phix_removal
+#
+#         #align qc'd reads to phix genome with bwa mem
+#         bwa mem {input.phix} {input.f_fq} {input.r_fq} -t {resources.cpus} > data/phix_removal/{wildcards.sample}.sam
+#
+#         #convert sam to bam
+#         samtools view -bS data/phix_removal/{wildcards.sample}.sam > data/phix_removal/{wildcards.sample}.bam
+#
+#         #Extract unmapped reads
+#         samtools view -b -f 12 -F 256 data/phix_removal/{wildcards.sample}.bam > data/phix_removal/{wildcards.sample}_unmapped.bam
+#
+#         #Sort unmapped reads with 2 threads
+#         samtools sort -n -m 5G -@ 2 data/phix_removal/{wildcards.sample}_unmapped.bam -o data/phix_removal/{wildcards.sample}_unmapped_sorted.bam
+#
+#         samtools fastq -@ {resources.cpus} data/phix_removal/{wildcards.sample}_unmapped_sorted.bam \
+#             -1 {output.f_fq} \
+#             -2 {output.r_fq} \
+#             -0 /dev/null -s /dev/null -n
+#
+#         #cleanup tmp files
+#         rm data/phix_removal/{wildcards.sample}*
+#         """
+#
+
+
 rule fastqc_trimmed:
     input:
         fastqs="data/qc_sequence_files/{sample}_{read_dir}.fastq.gz"
@@ -122,10 +165,12 @@ rule megahit_assemble:
         results_dir = directory("data/assembly_megahit/{sample}"),
         contigs = "data/assembly_megahit/{sample}/final.contigs.fa"
     conda: "code/master_env.yaml"
-    resources: cpus=8, mem_mb=100000, time_min=1440, mem_bytes = 100000000000
+    resources: cpus=16, mem_mb=200000, time_min=1440, mem_bytes = 20000000000
     shell:
         """
-        megahit -m {resources.mem_bytes} -1 {input.f_reads} -2 {input.r_reads} -o {output.results_dir}
+        rm -r data/assembly_megahit/{wildcards.sample} #megahit doesn't like the folder to already exist, but good to let snakemake have directory as output
+
+        megahit --presets meta-sensitive -m {resources.mem_bytes} -1 {input.f_reads} -2 {input.r_reads} -o {output.results_dir}
         """
 
 rule metaspades_assemble:

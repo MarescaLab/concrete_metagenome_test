@@ -5,17 +5,82 @@ date: "11/12/2020"
 output: html_document
 ---
 
-
 ```{r setup, include=FALSE}
 knitr::opts_knit$set(root.dir = here::here())
+
+
+library(tidyverse)
+library(KEGGREST)
+library(data.table)
+library(vroom)
+library(patchwork)
+library(topGO)
+library(glue)
+
+```
+
+
+## Evaluate prodigal annotation
+
+Read in genes prodigal annotated from assembly 
+```{r}
+
+prodigal <- Biostrings::readDNAStringSet("data/prodigal/S3_Fallen/proteins.faa") %>% 
+  as.data.frame() %>% 
+  rownames_to_column("header") %>% 
+  dplyr::rename(seq = "x")
+
+```
+
+
+```{r}
+glue("Prodigal annotated {nrow(prodigal)} genes")
+```
+
+
+Read in plass assembled genes
+```{r}
+plass <- Biostrings::readDNAStringSet("data/plass_assembly.fasta") %>% 
+  as.data.frame() %>% 
+  rownames_to_column("header") %>% 
+  dplyr::rename(seq = "x")
+
 ```
 
 ```{r}
-library(tidyverse)
-library(KEGGREST)
+glue("Plass assembled {nrow(plass)} protein sequences")
 ```
 
-Parse kegg data
+```{r}
+plass_and_prodigal <- bind_rows(prodigal %>% mutate(method = "prodigal"),
+                               plass %>% mutate(method = "plass")) %>% 
+  mutate(seq_length = str_length(seq)) %>% 
+  group_by(seq) %>% 
+  mutate(count = n())
+
+unique_plass_proteins <- plass_and_prodigal %>% 
+  filter(method == "plass") %>% 
+  summarise()
+
+unique_seqs <- unique_plass_proteins$seq
+
+names(unique_seqs) <- unique_plass_proteins$seq
+
+unique_seqs %>% 
+  Biostrings::DNAStringSet() %>% Biostrings::writeXStringSet("data/unique_plass.fasta")
+
+
+plass_and_prodigal %>% 
+  ggplot(aes(seq_length, fill= method)) +
+  geom_histogram() +
+  theme_bw()
+
+```
+
+
+
+
+## Parse kegg data
 ```{r}
 ko00001 <- read_delim("data/reference/ko00001.keg", 
     "\t", escape_double = FALSE, col_names = FALSE, 
@@ -123,6 +188,39 @@ for (folder in basename(list.dirs("data/GHOSTkoala")[-1])){
 }
 
 ghost_combined %>% write_tsv("data/GHOSTkoala/combined_counts.tsv")
+
+```
+
+
+Import GHOSTkoala data run on PLASS assemblies
+```{r}
+
+kegg <- read_tsv("data/reference/kegg.tsv")
+
+ghost_combined <- data.frame()
+tax_combined <- data.frame()
+
+for (folder in basename(list.dirs("data/plass_aa_assembly")[-1])){
+  
+  ghost <- read.table(file.path("data/plass_aa_assembly",folder,"ghost_koala_user_ko.txt"), quote="\"", comment.char="",fill = TRUE,row.names = NULL,header = FALSE) %>% 
+    dplyr::rename(contig_name = "V1", id = "V2") %>% 
+    group_by(id) %>% 
+    dplyr::filter(!is.na(id)) %>% 
+    summarise(meta_abund = n()) %>% 
+    mutate(sample = folder)
+  
+  ghost_combined <- bind_rows(ghost_combined,ghost)
+
+  tax_summary <- read_tsv(file.path("data/plass_aa_assembly",folder,"user.out.top"),col_names = F) %>% 
+    dplyr::select(genus = "X5") %>% 
+    group_by(genus) %>% 
+    summarise(abund = n()) %>% 
+    mutate(sample = folder)
+  
+  tax_combined <- bind_rows(tax_combined,tax_summary)
+}
+
+ghost_combined %>% write_tsv("data/plass_aa_assembly/combined_counts.tsv")
 
 ```
 
@@ -347,11 +445,45 @@ tail -n+4 S3_fallen.txt | sed 's/ * / /g' | cut -f 1-10 -d " " > S3_fallen_mod.t
 ```
 
 
+Import eggnoggmapper annotated [PLASS](https://www.nature.com/articles/s41592-019-0437-4) protein assemblies (this is new as of June 2021).
 ```{r}
-library(data.table)
-library(vroom)
-library(tidyverse)
-library(patchwork)
+
+eggnog <- read_tsv("data/eggnog_annotations.tsv",comment = "##") %>% 
+  filter(kegg)
+
+eggnog_ko_abund <- eggnog %>% 
+  dplyr::select(id = "KEGG_ko") %>% 
+  filter(id != "-") %>% 
+  separate_rows(id,sep = ",") %>% 
+  group_by(id) %>% 
+  summarise(meta_abund = n()) %>% 
+  mutate(sample ="S3_Fallen",
+         id = str_remove(id,"ko:"))
+
+
+egg_to_uniref90 <- read_tsv("data/reference/humann_map/map_eggnog_uniref90.txt.gz")
+
+
+go_from_egg <- eggnog %>% 
+  dplyr::select(GO = "GOs") %>% 
+  filter(GO != "-") %>% 
+  separate_rows(GO,sep = ",") %>% 
+  group_by(GO) %>% 
+  mutate(sample ="S3_Fallen",
+         GO = str_remove(GO,"GO:"))
+
+go_abund <- go_from_egg %>% 
+  group_by(GO,sample) %>% 
+  summarise(abund = n())
+
+
+```
+
+
+
+
+
+```{r}
 
 names <- c(
 		"target.name",
@@ -377,11 +509,11 @@ names <- c(
 #   mutate(sample = "S3_fallen",
 #          id = str_remove(id,"KO:"))
 
-foam_hmm <- read_rds("h:/concrete_metagenome_test/data/FOAM/S3_Fallen_combined.rds") %>% 
+foam_hmm <- read_rds("data/FOAM/S3_Fallen_combined.rds") %>% 
   group_by(sample,id) %>% 
   summarise(meta_abund = sum(meta_abund))
 
-ghost_combined <- read_tsv("data/GHOSTkoala/combined_counts.tsv")
+#ghost_combined <- read_tsv("data/GHOSTkoala/combined_counts.tsv")
 
 
 kegg <- read_tsv("data/reference/kegg.tsv")
@@ -390,19 +522,13 @@ kegg_modules <- read_tsv("data/reference/kegg_module_mem.tsv") %>% left_join(mod
 
 
 kegg_ontology <- kegg %>%
-  select(family, path_type, pathway, KO = "id") %>% 
+  dplyr::select(family, path_type, pathway, KO = "id") %>% 
   write_tsv("data/reference/ontology/kegg.tsv")
 
 kegg_module_ontology <- kegg_modules %>% 
-  select(module = "name", KO = "ko") %>% 
+  dplyr::select(module = "name", KO = "ko") %>% 
   write_tsv("kegg_modules.tsv")
 
-
-
-#make kegg match the FOAM layout
-kegg_ontology <- kegg %>% 
-  select()
-  
 
 
 ###Read in the ontologies
@@ -412,20 +538,21 @@ kegg_ontology <- read_tsv("data/reference/ontology/kegg.tsv")
 kegg_module_ontology <- read_tsv("data/reference/ontology/kegg_modules.tsv")
 
 
-
-foam2 <- foam_ontology %>% 
+#Replace the starting table here to define which ontology to use
+foam2 <- kegg_module_ontology %>% 
   gather("level","group", -c(KO)) %>% 
   group_by(level) %>% 
   mutate(total = n()) %>% 
   group_by(level,group) %>% 
   mutate(n_in = n(),
          n_out = total - n_in) %>% 
-  rename(id = "KO") %>% 
+  dplyr::rename(id = "KO") %>% 
   filter(!is.na(group))
 
-#meta_kegg <- ghost_combined 
+meta_kegg <- ghost_combined 
 #meta_kegg <- foam_hmm
-meta_kegg <- humann_for_OR
+#meta_kegg <- humann_for_OR
+#meta_kegg <- eggnog_ko_abund
 samples <- unique(meta_kegg$sample)
 
 
@@ -454,7 +581,7 @@ fisher <- joined_kegg %>%
          fisher.OR = fisher$estimate,
          fisher.ci.lower = fisher$conf.int[1],
          fisher.ci.upper = fisher$conf.int[2]) %>% 
-  select(sample, level, group, contingency_table, fisher, fisher.p, fisher.OR, fisher.ci.lower, fisher.ci.upper, OR) %>% 
+  dplyr::select(sample, level, group, contingency_table, fisher, fisher.p, fisher.OR, fisher.ci.lower, fisher.ci.upper, OR) %>% 
   unique() %>% 
   ungroup() %>% group_by(sample, level) %>%
   mutate(p.fdr = p.adjust(fisher.p,method = "fdr"))
@@ -563,21 +690,50 @@ fisher %>% ggplot(aes())
 ```{r}
 
 
-uniref_to_kegg <- read_tsv("C:/Users/eande/Downloads/full_mapping_v201901/map_ko_uniref90.txt.gz",col_names = FALSE) %>% 
+uniref_to_kegg <- read_tsv("data/reference/map_ko_uniref90.txt.gz",col_names = FALSE) %>% 
   pivot_longer(-X1,values_to = "uniref") %>% 
-  select(KO = "X1",uniref)
+  dplyr::select(KO = "X1",uniref)
+ 
+# uniref_to_ec <- read_tsv("data/reference/humann_map/map_level4ec_uniref90.txt.gz", col_names = FALSE) %>% 
+#  pivot_longer(-X1,values_to = "uniref") %>% 
+#    select(ec = "X1",uniref) %>% 
+#  filter(!is.na(uniref))
 
 
-uniref_to_kegg <- read_tsv("C:/Users/eande/Downloads/full_mapping_v201901/map_uniref90_name.txt.bz2",col_names = FALSE,n_max = 2000) #%>% 
-  pivot_longer(-X1,values_to = "uniref") %>% 
-  select(KO = "X1",uniref)
+# inform_uniref2go <- read_tsv("~/work/uniref/map_infogo1000_uniref90.txt.gz", col_names = FALSE) %>% 
+#   pivot_longer(-X1, names_to = "delete", values_to = "uniref") %>% 
+#   select(go = "X1", uniref) %>% 
+#   filter(!is.na(uniref)) %>% 
+#   left_join(read_tsv("data/reference/humann_map2/map_go_name.txt.gz", col_names = c("go","go_name")))
 
+
+
+# ec_abund <- path_gfam %>% 
+#  left_join(uniref_to_ec) %>% 
+#  left_join(ec2go, by = "ec")
+# 
+# simplified_go_abund <- ec_abund %>% filter(is.na(tax), !is.na(go))
+
+
+# ec2go <- read_delim("http://current.geneontology.org/ontology/external2go/ec2go", delim = ">", skip = 2, col_names = F) %>% 
+#   separate(X2, into = c("go_name","go"),sep = "; ") %>% 
+#   mutate(across(everything(),~str_remove(.x,".*:")),
+#          across(everything(),~trimws(.x))) %>% 
+#   select(ec = "X1", go, go_name)
+
+# uniref_to_go <- uniref_to_ec %>% left_join(ec2go) %>% filter(!is.na(go))
+
+#Uniref90 to GO term mapping isn't working as of 4/9/21... they seem to be different UniRef90 names?
+# go_map <- read_tsv("data/reference/humann_map2/map_go_uniref90.txt.gz",col_names = FALSE) %>% 
+#   pivot_longer(-X1, names_to = "delete", values_to = "uniref") %>% 
+#   select(go = "X1", uniref) %>% 
+#   filter(!is.na(uniref)) %>% 
+#   left_join(read_tsv("data/reference/humann_map2/map_go_name.txt.gz", col_names = c("go","go_name")))
 
 path_abund <- read_tsv("data/humann3/S3_Fallen/S3_Fallen_humann_pathabundance.tsv") 
 
 path_abund <- path_abund %>% 
   mutate(S3_Fallen_humann_Abundance = round(S3_Fallen_humann_Abundance,2))
-
 
 path_cov <- read_tsv("data/humann3/S3_Fallen/S3_Fallen_humann_pathcoverage.tsv")
 
@@ -592,7 +748,7 @@ gfam_ko <- path_gfam %>%
 
 ko_humann <- gfam_ko %>% 
   filter(!is.na(KO))  %>% 
-  left_join(ko_info %>% rename(KO = "ko")) %>% 
+  left_join(kegg %>% dplyr::rename(KO = "id")) %>% 
   left_join(kegg_ontology)  %>% 
   left_join(foam_ontology) %>% 
   left_join(kegg_module_ontology)
@@ -601,17 +757,285 @@ ko_humann <- gfam_ko %>%
 ko_humann_no_tax <- gfam_ko %>% 
   filter(!is.na(KO),
          is.na(tax)) %>% 
-  left_join(ko_info %>% rename(KO = "ko")) %>% 
+  #left_join(ko_info %>% rename(KO = "ko")) %>% 
   left_join(kegg_ontology) %>% 
   left_join(foam_ontology) %>% left_join(kegg_module_ontology)
 
 
 humann_for_OR <- ko_humann_no_tax %>% 
-  select(id = KO, meta_abund = "S3_Fallen_humann_Abundance-RPKs") %>% 
+  dplyr::select(id = KO, meta_abund = "S3_Fallen_humann_Abundance-RPKs") %>% 
   distinct() %>% 
   mutate(sample = "S3_Fallen",
          meta_abund = round((meta_abund * (1/min(meta_abund)))* 10))
 
+
+#gfam_go <- path_gfam %>% 
+
+
+
+
+#test <- read_tsv("data/reference/humann_map2/map_uniref90_name.txt.bz2")
+# 
+# test <- read_tsv("https://github.com/biobakery/humann/raw/master/humann/data/misc/map_go_uniref90.txt.gz", col_names = FALSE) %>% 
+#   pivot_longer(-X1, names_to = "delete", values_to = "uniref") %>% 
+#   select(go = "X1", uniref) %>% 
+#   filter(!is.na(uniref))
+# 
+# test2 <- read_tsv("https://github.com/biobakery/humann/raw/master/humann/data/misc/map_go_name.txt.gz")
+# 
+# 
+# kegg2go <- read_delim("http://current.geneontology.org/ontology/external2go/kegg2go", delim = ">", skip = 2, col_names = F) %>% separate(X2, into = c("name","id"),sep = "; ")
+
+```
+
+
+
+#Diagnosing problems with GO term annotation of UniRef clusters
+  -This should be pretty straightforward, but I think something is wrong with the mapping file?
+  
+  To check them, I'm making a list of the UniRef clusters found in our sample, and then seeing how many of them are in the uniref2go mapping file
+ 
+How many uniref clusters from our sample map to kegg annotations? 
+```{r}
+
+#List the Uniref clusters annotated in our sample
+uniref_in_sample <- path_gfam %>% pull(uniref) %>% unique()
+
+
+
+#####
+#Kegg mapping from HUMANN3
+uniref_to_kegg <- read_tsv("data/reference/map_ko_uniref90.txt.gz",col_names = FALSE) %>% 
+  pivot_longer(-X1,values_to = "uniref") %>% 
+  dplyr::select(KO = "X1",uniref)
+
+
+#List of uniref clusters in full mapping file
+uniref_in_uniref_to_kegg <- uniref_to_kegg %>% pull(uniref) %>% unique()
+
+
+percenct_of_sample_uniref_w_kegg <- signif((sum(uniref_in_sample %in% uniref_in_uniref_to_kegg) / length(uniref_in_sample) *100),3)
+
+glue::glue("{percenct_of_sample_uniref_w_kegg}% of uniref clusters observed in our sample are in the uniref2kegg mapping file")
+
+```
+
+How many uniref clusters in our sample map to go terms in the full uniref2go mapping file?
+```{r}
+#####
+#Full go term mapping from HUMANN3
+go_map_wide <- read_tsv("data/reference/humann_map2/map_go_uniref90.txt.gz",col_names = FALSE) 
+
+go_map <- go_map_wide  %>% 
+  pivot_longer(-X1, names_to = "delete", values_to = "uniref") %>% 
+  select(go = "X1", uniref) %>% 
+  filter(!is.na(uniref))
+
+#List of uniref clusters in full mapping file
+uniref_in_uniref2go <- go_map %>% pull(uniref) %>% unique()
+
+
+percenct_of_sample_uniref_w_go <- signif((sum(uniref_in_sample %in% uniref_in_uniref2go) / length(uniref_in_sample) *100),3)
+
+glue::glue("{percenct_of_sample_uniref_w_go}% of uniref clusters observed in our sample are in the full uniref2go mapping file")
+
+export_go_map_for_bingo <- go_map %>% 
+  mutate(go = str_remove(go, "GO:"),
+         export = paste0(uniref,"=",go)) %>% 
+  select(export) %>% 
+  write_tsv("data/reference/bingo.tsv")
+
+#export uniref list for bingo
+path_gfam %>% select(uniref) %>% distinct() %>% write_tsv("results/uniref_list_for_bingo.tsv")
+
+```
+
+
+How many uniref clusters in our sample map to go terms in the informative 1000 subset uniref2go mapping file?
+```{r}
+#####
+#The informative go term annotation from HUMANN3
+inform_uniref2go <- read_tsv("~/work/uniref/map_infogo1000_uniref90.txt.gz", col_names = FALSE) %>% 
+  pivot_longer(-X1, names_to = "delete", values_to = "uniref") %>% 
+  select(go = "X1", uniref) %>% 
+  filter(!is.na(uniref)) %>% 
+  left_join(read_tsv("data/reference/humann_map2/map_go_name.txt.gz", col_names = c("go","go_name")))
+
+#list of uniref clusters in the informative uniref2go mapping file
+uniref_in_uniref2go_inform <- inform_uniref2go %>% pull(uniref) %>% unique()
+
+
+percenct_of_sample_uniref_w_inform_go <- signif((sum(uniref_in_sample %in% uniref_in_uniref2go_inform) / length(uniref_in_sample) *100),3)
+
+glue::glue("{percenct_of_sample_uniref_w_inform_go}% of uniref clusters observed in our sample are in the informative uniref2go mapping file")
+
+
+```
+
+
+#Re-doing HUMANN analysis
+
+```{r}
+
+#Full go term mapping from HUMANN3
+go_map_wide <- read_tsv("data/reference/humann_map2/map_go_uniref90.txt.gz",col_names = FALSE) 
+
+go_map <- go_map_wide  %>% 
+  pivot_longer(-X1, names_to = "delete", values_to = "uniref") %>% 
+  dplyr::select(go = "X1", uniref) %>% 
+  filter(!is.na(uniref))
+
+go_names <- read_tsv("data/reference/humann_map/map_go_name.txt.gz",col_names = F) %>% 
+  dplyr::rename(go = "X1", go_name = "X2")
+
+uniref_abund_both <- read_tsv("data/humann3/S3_Fallen/S3_Fallen_humann_genefamilies.tsv") %>% 
+  separate(into = c("uniref","tax"), sep = "\\|",fill = "right" ,col = `# Gene Family`) %>% 
+  left_join(go_map) %>% left_join(go_names)
+
+uniref_abund <- uniref_abund_both %>% filter(is.na(tax))
+
+uniref_tax_abund <- uniref_abund_both %>% filter(!is.na(tax))
+
+
+sample_go_count <- uniref_abund %>% 
+  group_by(go) %>% 
+  summarise(go_count = n()) %>% 
+  left_join(go_names) %>% 
+  filter(!is.na(go))
+
+go_background <- go_map %>%
+  group_by(go) %>% 
+  summarize(go_count = n()) %>% 
+  left_join(go_names)
+
+
+go_of_interest <- sample_go_count$go_count
+
+names(go_of_interest) <- sample_go_count$go_name
+
+
+```
+
+## GO Biological Process Enrichment
+
+```{r}
+#library(clusterProfiler)
+
+#Read in go term names
+go_names <- read_tsv("data/reference/humann_map/map_go_name.txt.gz",col_names = F) %>% 
+  dplyr::rename(go = "X1", go_name = "X2")
+
+#Full go term mapping from HUMANN3
+go_map_wide <- read_tsv("data/reference/humann_map2/map_go_uniref90.txt.gz",col_names = FALSE) 
+
+
+go_map2 <- go_map_wide %>% column_to_rownames("X1") %>% t()
+
+
+rownames(go_map2) <- NULL
+
+my_list2 <- list()
+for(i in 1:ncol(go_map2)) { # Using for-loop to add columns to list
+  my_list2[[i]] <- go_map2[ , i]
+}
+
+names(my_list2) <- colnames(go_map2) 
+
+my_list2 <- lapply(my_list2, function(x) x[!is.na(x)])
+
+str(head(my_list2))
+
+geneID2GO <- inverseList(my_list2)
+
+
+names(uniref_in_uniref2go) <- uniref_in_uniref2go
+
+names(uniref_in_sample) <- uniref_in_sample
+
+interesting_uniref <- factor(as.integer(uniref_in_uniref2go %in% uniref_in_sample))
+
+names(interesting_uniref) <- uniref_in_uniref2go
+
+all_uniref_factor <- as.factor(uniref_in_uniref2go)
+
+
+abund <- path_gfam %>% filter(is.na(tax), uniref != "UNMAPPED")
+
+abund_list <- abund$`S3_Fallen_humann_Abundance-RPKs`
+
+names(abund_list) <- abund$uniref
+
+
+topgo_data <- new("topGOdata",
+  description = "S3 Fallen Go Enrichment", ontology = "BP",
+  allGenes = interesting_uniref,
+  nodeSize = 2,
+  annot = annFUN.gene2GO, gene2GO = geneID2GO)
+
+
+##export topgo data so doens't have to be re-processed if interactively running enrichment tests again
+##qs package used because rds was either too slow or wasn't working properly
+
+qs::qsave(topgo_data,"data/humann3/topgoBP.qs",preset = "fast",nthreads = 2)
+
+```
+
+Read in topgo data (for interactive testing)
+```{r}
+topgo_data <- qs::qread("data/humann3/topgoBP.qs",nthreads = 2)
+
+```
+
+Using topGO's default weight01 which down-weights the upper level enrichments (get lower level results)
+And fisher for testing
+```{r}
+resultWeight <- runTest(topgo_data, statistic = "fisher")
+
+weight_res <- as.data.frame(resultWeight@score) %>% 
+  rownames_to_column("go") %>% 
+  left_join(go_names)
+
+write_tsv(weight_res,"results/weight_goBP_results.tsv")
+
+```
+
+Using topGO's default weight01 which down-weights the upper level enrichments (get lower level results)
+And the KS test for significance testing
+```{r}
+resultWeightKS <- runTest(topgo_data, statistic = "ks")
+
+
+weight_res_KS <- as.data.frame(resultWeightKS@score) %>% 
+  rownames_to_column("go") %>% 
+  left_join(go_names)
+
+write_tsv(weight_res_KS,"results/weight_goBP_KS_results.tsv")
+
+```
+
+
+Plot top 25 enriched terms
+```{r}
+weight_res %>% 
+  mutate(go_name = str_remove(go_name, "\\[BP\\]")) %>% 
+  top_n(25,-`resultWeight@score`) %>% 
+  filter(`resultWeight@score` <= 0.01) %>% 
+  ggplot(aes(`resultWeight@score`, reorder(go_name,-`resultWeight@score`))) +
+  geom_point() +
+  theme_bw() +
+  scale_x_log10() +
+  coord_cartesian(xlim = c(1e-7,0.01)) +
+  labs(y = NULL,
+       x = "topGO weight01 score",
+       title = "GO Biological Process Enrichment") +
+  ggsave("results/figures/goBP_enrichment.tiff",width = 4, height = 2.5,scale = 1.75) +
+  ggsave("results/figures/goBP_enrichment.png",width = 4, height = 2.5,scale = 1.75)
+  
+
+
+
+res_simp <- go_res %>% 
+  mutate(score = format(`resultWeight@score`, scientific = F, digits = 3))
 
 ```
 
@@ -620,20 +1044,180 @@ humann_for_OR <- ko_humann_no_tax %>%
 
 
 
+Standard classical Fisher tests
+```{r}
+test.stat <- new("classicCount", testStatistic = GOFisherTest, name = "Fisher test")
+
+resultFisher <- getSigGroups(topgo_data, test.stat)
+
+fisher_res <- as.data.frame(resultFisher@score) %>% 
+  rownames_to_column("go") %>% 
+  left_join(go_names)
+
+write_tsv(fisher_res,"results/fisher_goBP_results.tsv")
+```
 
 
 
+## GO Molecular Function Enrichment
+
+```{r}
+topgo_MF <- new("topGOdata",
+  description = "S3 Fallen Go Enrichment", ontology = "MF",
+  allGenes = interesting_uniref,
+  nodeSize = 2,
+  annot = annFUN.gene2GO, gene2GO = geneID2GO)
+
+
+##export topgo data so doens't have to be re-processed if interactively running enrichment tests again
+##qs package used because rds was either too slow or wasn't working properly
+
+qs::qsave(topgo_MF,"data/humann3/topgo_MF.qs",preset = "fast",nthreads = 2)
+
+```
+
+Read in topgo data (for interactive testing)
+```{r}
+if (!exists("topgo_MF")){
+topgo_MF <- qs::qread("data/humann3/topgo_MF.qs",nthreads = 2)
+}
+```
+
+
+```{r}
+#Using topGO's default weight01 which down-weights the upper level enrichments (get lower level results)
+
+resultWeight_MF <- runTest(topgo_MF, statistic = "fisher")
+
+weight_res_MF <- as.data.frame(resultWeight_MF@score) %>% 
+  rownames_to_column("go") %>% 
+  left_join(go_names)
+
+write_tsv(weight_res_MF,"results/weightMF_go_results.tsv")
+
+```
+
+
+Standard classical Fisher tests
+```{r}
+test.stat <- new("classicCount", testStatistic = GOFisherTest, name = "Fisher test")
+
+resultFisher_MF <- getSigGroups(topgo_MF, test.stat)
+
+fisher_resMF <- as.data.frame(resultFisher_MF@score) %>% 
+  rownames_to_column("go") %>% 
+  left_join(go_names)
+
+write_tsv(fisher_resMF,"results/fisher_goMF_results.tsv")
+```
 
 
 
+##GO Cellular Component Enrichment
+
+
+```{r}
+topgo_CC <- new("topGOdata",
+  description = "S3 Fallen Go Enrichment", ontology = "CC",
+  allGenes = interesting_uniref,
+  nodeSize = 2,
+  annot = annFUN.gene2GO, gene2GO = geneID2GO)
+
+
+##export topgo data so doens't have to be re-processed if interactively running enrichment tests again
+##qs package used because rds was either too slow or wasn't working properly
+
+qs::qsave(topgo_CC,"data/humann3/topgo_CC.qs",preset = "fast",nthreads = 2)
+
+```
+
+Read in topgo data (for interactive testing)
+```{r}
+
+if (!exists("topgo_CC")){
+topgo_CC <- qs::qread("data/humann3/topgo_CC.qs",nthreads = 2)
+}
+```
+
+
+```{r}
+#Using topGO's default weight01 which down-weights the upper level enrichments (get lower level results)
+
+resultWeight_CC <- runTest(topgo_CC, statistic = "fisher")
+
+weight_res_CC <- as.data.frame(resultWeight_CC@score) %>% 
+  rownames_to_column("go") %>% 
+  left_join(go_names)
+
+write_tsv(weight_res_CC,"results/weightCC_go_results.tsv")
+
+```
+
+
+Standard classical Fisher tests
+```{r}
+test.stat <- new("classicCount", testStatistic = GOFisherTest, name = "Fisher test")
+
+resultFisher_CC <- getSigGroups(topgo_CC, test.stat)
+
+fisher_resCC <- as.data.frame(resultFisher_CC@score) %>% 
+  rownames_to_column("go") %>% 
+  left_join(go_names)
+
+write_tsv(fisher_resCC,"results/fisher_goCC_results.tsv")
+```
+
+
+## Read in TSVs and use for analysis
+
+Running all of the enrichment test above is slow, so this is here for importing the results at a later data for viewing or subsequent analysis.
+
+```{r}
+
+
+# BP weight01 w/ Fisher test
+weight_res <- read_tsv("results/weight_goBP_results.tsv")
+
+# BP weight01 w/ KS test
+weight_res_KS <- read_tsv("results/weight_goBP_KS_results.tsv")
+
+# BP classic Fisher test
+fisher_res <- read_tsv("results/fisher_goBP_results.tsv")
+
+# MF weight01 w/ Fisher test
+weight_res_MF <- read_tsv("results/weightMF_go_results.tsv")
+
+# MF classic Fisher test
+fisher_resMF <- read_tsv("results/fisher_goMF_results.tsv")
+
+# CC weight01 w/ Fisher test
+weight_res_CC <- read_tsv("results/weightCC_go_results.tsv")
+
+# CC classic Fisher test
+fisher_resCC <- read_tsv("results/fisher_goCC_results.tsv")
+
+
+```
 
 
 
+Plot top 25 enriched terms
+```{r}
+weight_res %>% 
+  mutate(go_name = str_remove(go_name, "\\[BP\\]")) %>% 
+  top_n(25,-`resultWeight@score`) %>% 
+  filter(`resultWeight@score` <= 0.01) %>% 
+  ggplot(aes(`resultWeight@score`, reorder(go_name,-`resultWeight@score`))) +
+  geom_point() +
+  theme_bw() +
+  scale_x_log10() +
+  coord_cartesian(xlim = c(1e-7,0.01)) +
+  labs(y = NULL,
+       x = "topGO weight01 score",
+       title = "GO Biological Process Enrichment") +
+  ggsave("results/figures/goBP_enrichment.tiff",width = 4, height = 2.5,scale = 1.75) +
+  ggsave("results/figures/goBP_enrichment.png",width = 4, height = 2.5,scale = 1.75)
+  
+```
 
 
-
-
-
-
-
- 
