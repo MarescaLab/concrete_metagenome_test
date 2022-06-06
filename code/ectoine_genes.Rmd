@@ -1,0 +1,133 @@
+---
+title: "Ectoine gene BLASTing"
+output: html_notebook
+---
+
+```{r setup, include=FALSE}
+#Set working directory to project root
+knitr::opts_knit$set(root.dir = here::here())
+
+#Load packages
+library(tidyverse)
+```
+
+
+```{r}
+contig_tax <- read_tsv("data/kraken2_contigs/gtdb/translated_out.txt",col_names = c("contig","contig_taxonomy"))
+```
+
+
+
+```{r}
+gene_data <- read_csv("data/reference/ectoine_metabolism_genes.csv")
+
+blast6_cols <- c("Query", "Subject", "Percent_ID", "Aln_Len", "Mismatch", "Gap", "Query_Start", "Query_Stop", "Subject_Start", "Subject_Stop", "E-Value", "Bit_Score", "percent_of_query_aligned", "subject_title","aligned_qeuery_seq", "aligned_subject_seq")
+
+contig_coverage <- read_tsv("data/contig_coverage.tsv") %>% 
+  rename_all(~str_remove(.x,".* "))
+
+blast_res <- read_tsv("data/BLAST/ectoine_genes_BLAST.blastn", skip = 1,col_types = "ccdiddiiiidddccc", col_names = blast6_cols) %>% 
+  left_join(gene_data) %>% 
+  left_join(contig_tax %>% rename(subject_title = "contig")) %>% 
+  left_join(contig_coverage %>% rename(subject_title = "Contig"))
+
+# Filter using EggNog Mapper filtering criteria
+blast_res_filtered <- blast_res %>% 
+  filter(`E-Value` < 0.001, Bit_Score > 60, Percent_ID > 40, percent_of_query_aligned > 20) 
+
+tax_levels <- c("Kingdom", "Phylum", "Class", "Order", "Family", "Genus", "Species")
+
+blast_res_filtered %>% 
+  mutate(contig_taxonomy = str_remove(contig_taxonomy,"\\|g__.*"),
+         contig_taxonomy = str_remove_all(contig_taxonomy,"\\|[a-z]__unassigned"),
+         contig_taxonomy = str_replace_all(contig_taxonomy,"\\|o","\no"),
+         contig_taxonomy = str_replace_all(contig_taxonomy,"\\|"," | "),
+         contig_taxonomy = if_else(is.na(contig_taxonomy),"Unclassified",contig_taxonomy)) %>% 
+  group_by(contig_taxonomy,geneID,synth_or_deg) %>% 
+  summarise(RPKM = mean(RPKM),
+            Mean = mean(Mean)) %>%
+  ggplot(aes(geneID, contig_taxonomy, fill = Mean)) +
+  geom_tile() + 
+  scale_fill_viridis_c() +
+  facet_grid(~synth_or_deg,scales = "free_x",space = "free_x") +
+  labs(y = NULL, x= "Gene" , fill ="Mean\nCoverage") +
+  theme_bw()
+
+ggsave("results/Ectoine_gene_coverage.png",width = 3, height = 3, dpi = 600, scale = 3)
+
+
+blast_res_filtered %>% 
+  mutate(contig_taxonomy = str_remove(contig_taxonomy,"\\|o__.*"),
+         contig_taxonomy = str_remove_all(contig_taxonomy,"\\|[a-z]__unassigned"),
+         contig_taxonomy = str_replace_all(contig_taxonomy,"\\|o","\no"),
+         contig_taxonomy = str_replace_all(contig_taxonomy,"\\|"," | "),
+         contig_taxonomy = if_else(is.na(contig_taxonomy),"Unclassified",contig_taxonomy)) %>% 
+  group_by(contig_taxonomy,geneID,synth_or_deg) %>% 
+  summarise(RPKM = mean(RPKM),
+            Mean = mean(Mean)) %>% ungroup() %>% group_by(contig_taxonomy) %>% 
+  mutate(contig_taxonomy = if_else(contig_taxonomy == "k__Bacteria","Other Bacteria",contig_taxonomy),
+         contig_taxonomy = str_remove(contig_taxonomy, "k__"),
+         num_genes = sum(Mean > 0)) %>% 
+  #ggplot(aes(geneID, factor(contig_taxonomy,levels = tax_order, ordered = TRUE) , fill = Mean)) +
+  ggplot(aes(geneID, contig_taxonomy, fill = Mean)) +
+  geom_tile() + 
+  scale_fill_viridis_c() +
+  facet_grid(~synth_or_deg,scales = "free_x",space = "free_x") +
+  labs(y = NULL, x= "Gene" , fill ="Mean Contig\nRead Coverage") +
+  theme_bw() +
+  scale_y_discrete(limits=rev) +
+  theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank())
+
+ggsave("results/Ectoine_gene_coverage_to_Class.png",width = 3, height = 1.5, scale = 3.5, type = "cairo")
+ggsave("results/Ectoine_gene_coverage_to_Class.svg",width = 3, height = 1.5, dpi = 600, scale = 3.5)
+
+
+blast_res_filtered %>% 
+  filter(Query_tax =="Halobacillus halophilus") %>% 
+  mutate(contig_taxonomy = str_remove(contig_taxonomy,"\\|o__.*"),
+         contig_taxonomy = str_remove_all(contig_taxonomy,"\\|[a-z]__unassigned"),
+         contig_taxonomy = str_replace_all(contig_taxonomy,"\\|o","\no"),
+         contig_taxonomy = str_replace_all(contig_taxonomy,"\\|"," | "),
+         contig_taxonomy = if_else(is.na(contig_taxonomy),"Unclassified",contig_taxonomy)) %>% 
+  group_by(contig_taxonomy,geneID,synth_or_deg) %>% 
+  summarise(RPKM = mean(RPKM),
+            Mean = mean(Mean)) %>% ungroup() %>% group_by(contig_taxonomy) %>% 
+  mutate(contig_taxonomy = if_else(contig_taxonomy == "k__Bacteria","Other Bacteria",contig_taxonomy),
+         contig_taxonomy = str_remove(contig_taxonomy, "k__"),
+         num_genes = sum(Mean > 0)) %>% 
+  ggplot(aes(geneID, reorder(contig_taxonomy,num_genes) , fill = Mean)) +
+  geom_tile() + 
+  scale_fill_viridis_c() +
+  facet_grid(~synth_or_deg,scales = "free_x",space = "free_x") +
+  labs(y = NULL, x= "Gene" , fill ="Mean Contig\nRead Coverage") +
+  theme_bw() +
+  scale_y_discrete(limits=rev) +
+  theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank())
+
+ggsave("results/Ectoine_gene_coverage_to_Class_only_Halobacillus_ectGenes.png",width = 3, height = 1.5, dpi = 600, scale = 2.5)
+ggsave("results/Ectoine_gene_coverage_to_Class_only_Halobacillus_ectGenes.svg",width = 3, height = 1.5, dpi = 600, scale = 2.5)
+
+
+blast_res_filtered %>% 
+  mutate(contig_taxonomy = str_remove(contig_taxonomy,"\\|c__.*"),
+         contig_taxonomy = str_remove_all(contig_taxonomy,"\\|[a-z]__unassigned"),
+         contig_taxonomy = str_replace_all(contig_taxonomy,"\\|o","\no"),
+         contig_taxonomy = str_replace_all(contig_taxonomy,"\\|"," | "),
+         contig_taxonomy = if_else(is.na(contig_taxonomy),"Unclassified",contig_taxonomy)) %>% 
+  group_by(contig_taxonomy,geneID,synth_or_deg) %>% 
+  summarise(RPKM = mean(RPKM),
+            Mean = mean(Mean)) %>% ungroup() %>% group_by(contig_taxonomy) %>% 
+  mutate(contig_taxonomy = if_else(contig_taxonomy == "k__Bacteria","Other Bacteria",contig_taxonomy),
+         contig_taxonomy = str_remove(contig_taxonomy, "k__"),
+         num_genes = sum(Mean > 0)) %>% 
+  ggplot(aes(geneID, reorder(contig_taxonomy,num_genes) , fill = Mean)) +
+  geom_tile() + 
+  scale_fill_viridis_c() +
+  facet_grid(~synth_or_deg,scales = "free_x",space = "free_x") +
+  labs(y = NULL, x= "Gene" , fill ="Mean\nCoverage") +
+  theme_bw()
+
+ggsave("results/Ectoine_gene_coverage_to_Phylum.png",width = 3, height = 1.2, dpi = 600, scale = 3)
+
+```
+

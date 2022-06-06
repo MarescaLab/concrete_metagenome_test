@@ -1,23 +1,16 @@
-# Concrete metagenome test
+# Concrete metagenome trial
 
-This repository contains processing and analysis of a MiSeq test run of shotgun metagenomics from a concrete sample.
+This repository contains processing and analysis of a shotgun metagenome obtained from a concrete sample. The samples was obtained from a deteriorating New Jersey road bridge constructed in 1940. The metagenome of this sample and a blank negative control extraction were sequenced with an Illumina MiSeq by the University of Delaware Sequencing and Genotyping core laboratory.
 
 ## Processing
 
+![Bioinformatics overview](rulegraph.png)
+
 1.  Read quality analysis with fastqc
 2.  Adapter & quality trimming with TrimGalore!
-3.  Paired end joining with FLASH
-4.  Taxonomic profiling with MetaPhlan3
-5.  Taxonomic profiling with SHOGUN
-6.  Taxonomic profiling with Kraken
+3.  Taxonomic profiling with Kraken
+4.  Functional profiling with HUMAnN 3.0
+5.  Assembly with metaSPAdes and MEGAHIT
+6.  BLAST search for genes involved in ectoine biosynthesis, transport, and degradation
 
-## Repository structure
-
--   data
-
-    -   raw: raw data and QC metrics
-    -   QC metagenomic data
-
--   code
-
-    -   preprocess.Rmd drives the initial data processing
+All computational analyses run are defined in the Snakefile which can be reproducibly run using [snakemake](https://snakemake.readthedocs.io/en/stable/).

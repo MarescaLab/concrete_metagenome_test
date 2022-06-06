@@ -6,6 +6,7 @@ output: html_notebook
 
 ```{r setup, include=FALSE}
 knitr::opts_knit$set(root.dir = here::here())
+library(tidyverse)
 ```
 
 
@@ -343,7 +344,7 @@ obj$data$tax_abund$S3 <- obj$data$tax_abund$rel.abund
 
 
 (tree <- obj %>%
-    taxa::filter_taxa(S3 > 0.001) %>%
+    filter_taxa(S3 > 0.001) %>%
     heat_tree(node_label = taxon_names,
           node_size = S3,
           node_size_range = c(0.00175,0.045),

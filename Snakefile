@@ -50,6 +50,24 @@ rule all:
         expand("data/humann3/{sample}/", sample = samples),
         expand("data/FOAM/{sample}_combined.rds", sample = samples)
 
+rule paper_outputs:
+    input:
+        expand("{raw_folder}/fastqc_reports/S3_Fallen_{read_dir}_fastqc.html", raw_folder=raw_seq_folder, read_dir=read_dirs),
+        expand("{qc_folder}/fastqc_reports/S3_Fallen_{read_dir}_fastqc.html", qc_folder=qc_seq_folder, read_dir=read_dirs),
+        "results/sequence_quality/",
+        "data/kraken2/S3_Fallen_report.txt",
+        "data/kraken2/S3_Fallen_brackenReport.txt",
+        "data/kraken2_euk/S3_Fallen_brackenReport.txt",
+        "data/kraken2/S3_Fallen_brackenMpa.txt",
+        "data/humann3/S3_Fallen/",
+        "data/assembly_megahit/S3_Fallen",
+        "data/assembly_metaspades/S3_Fallen/contigs.fasta",
+        "data/prodigal/S3_Fallen",
+        "data/BLAST/ectoine_genes_BLAST.blastn",
+        "data/contig_coverage.tsv",
+        "rulegraph.png"
+
+
 rule tax_profile:
     input:
         expand("data/kraken2/{sample}_report.txt", sample = samples),
@@ -62,6 +80,16 @@ rule assemble:
         expand("data/assembly_metaspades/{sample}", sample = samples),
         expand("data/assembly_megahit/{sample}", sample = samples),
         expand("data/assembly_megahit/{sample}/final.contigs.fa",sample = samples)
+
+rule make_rulegraph:
+    output:
+        "rulegraph.pdf",
+        "rulegraph.png"
+    shell:
+        """
+        snakemake paper_outputs --rulegraph --dry-run | dot -Tpdf > rulegraph.pdf
+        snakemake paper_outputs --rulegraph --dry-run | dot -Tpng > rulegraph.png
+        """
 
 rule fastqc_raw:
     input:
@@ -178,7 +206,8 @@ rule metaspades_assemble:
           f_reads = "data/qc_sequence_files/{sample}_R1.fastq.gz",
           r_reads = "data/qc_sequence_files/{sample}_R2.fastq.gz"
     output:
-        directory("data/assembly_metaspades/{sample}")
+        directory("data/assembly_metaspades/{sample}"),
+        "data/assembly_metaspades/{sample}/contigs.fasta"
     conda: "code/master_env.yaml"
     resources: cpus=16, mem_mb=1000000, time_min=7200, mem_gb = 500
     shell:
@@ -364,7 +393,7 @@ rule humann:
 #Predict genes with prodigal
 rule prodigal:
     input:
-        contigs="data/assembly_megahit/{sample}/final.contigs.fa"
+        contigs="data/assembly_metaspades/{sample}/contigs.fasta"
     output: directory("data/prodigal/{sample}")
     conda: "code/master_env.yaml"
     resources: cpus=1, mem_mb=50000, time_min=1440
@@ -585,6 +614,153 @@ rule foam_process:
 
         'RSCRIPT'
         """
+
+
+# Run BLASTS for ectoine synthesis and degradation
+
+rule make_nuc_blastdb:
+    input:
+        db = "data/assembly_metaspades/S3_Fallen/contigs.fasta.gz",
+    output:
+        db_index = "data/assembly_metaspades/S3_Fallen/contigs.fasta.nin"
+    log:
+        "logs/BLAST/makeblastdb_contigs_nuc.log"
+    resources: cpus=1, mem_mb=5000, time_min=120
+    shell:
+        """
+        gunzip -c {input.db} > data/assembly_metaspades/S3_Fallen/contigs.fasta
+        
+        makeblastdb -in data/assembly_metaspades/S3_Fallen/contigs.fasta -dbtype nucl -logfile logs/BLAST/makeblastdb_contigs_nuc.dblog
+        """
+
+
+rule blast_nuc:
+    input:
+        blast_db = "data/assembly_metaspades/S3_Fallen/contigs.fasta",
+        blast_db_index = rules.make_nuc_blastdb.output.db_index,
+        genes = "data/reference/ectoine_metabolism_fasta.fasta"
+    output:
+        blast_res = "data/BLAST/ectoine_genes_BLAST.blastn"
+    log:
+        "logs/BLAST/ectoine_genes_nuc.log"
+    resources: cpus=8, mem_mb=5000, time_min=120
+    shell:
+        """
+        tblastn -query {input.genes} \
+            -db {input.blast_db} \
+            -out {output.blast_res} \
+            -outfmt '6 std qcovs stitle qseq sseq' \
+            -num_threads {resources.cpus}
+        """
+
+
+rule kraken2_gtdb_contigs: ##Run kraken2
+    input:
+        f_seq = "data/assembly_metaspades/S3_Fallen/contigs.fasta"
+    params:
+        db = "/work/akiledal/kraken2_db/gtdb_r202"
+    output:
+        report = "data/kraken2_contigs/gtdb/report.txt",
+        out = "data/kraken2_contigs/gtdb/out.txt",
+        bracken = "data/kraken2_contigs/gtdb/bracken.txt",
+        bracken_report = "data/kraken2_contigs/gtdb/brackenReport.txt",
+        bracken_mpa = "data/kraken2_contigs/gtdb/brackenMpa.txt",
+        unclass_f = "data/kraken2_contigs/gtdb/unclassified.fasta"
+    conda: "code/kraken.yaml"
+    resources: cpus=8, mem_mb=500000, time_min=1440, mem_gb = 500
+    shell:
+        """
+        kraken2 \
+            --threads {resources.cpus} \
+            --classified-out data/kraken2_contigs/gtdb/classified.fasta \
+            --unclassified-out data/kraken2_contigs/gtdb/unclassified.fasta \
+            --report {output.report} \
+            --output {output.out} \
+            --db {params.db} \
+            {input.f_seq}
+
+        bracken -d {params.db} -i {output.report} -o {output.bracken} -w {output.bracken_report}
+
+        ./code/kreport2mpa.py -r {output.bracken_report} -o {output.bracken_mpa} --percentages
+        """
+
+rule kraken2_refseq_contigs: ##Run kraken2
+    input:
+        f_seq = "data/kraken2_contigs/gtdb/unclassified.fasta"
+    params:
+        db = "/work/akiledal/kraken2_db/refseq"
+    output:
+        report = "data/kraken2_contigs/refseq/report.txt",
+        out = "data/kraken2_contigs/refseq/out.txt",
+        bracken = "data/kraken2_contigs/refseq/bracken.txt",
+        bracken_report = "data/kraken2_contigs/refseq/brackenReport.txt"
+    conda: "code/kraken.yaml"
+    resources: cpus=8, mem_mb=500000, time_min=1440, mem_gb = 500
+    shell:
+        """
+        kraken2 \
+            --threads {resources.cpus} \
+            --classified-out data/kraken2_contigs/refseq/classified.fasta \
+            --unclassified-out data/kraken2_contigs/refseq/unclassified.fasta \
+            --report {output.report} \
+            --output {output.out} \
+            --db {params.db} \
+            {input.f_seq}
+
+        bracken -d {params.db} -i {output.report} -o {output.bracken} -w {output.bracken_report}
+        """
+
+
+rule translate_kraken: ##Run kraken2
+    input:
+        script = "code/translateKraken2.py",
+        refseq = "data/kraken2_contigs/refseq/out.txt",
+        gtdb = "data/kraken2_contigs/gtdb/out.txt"
+    params:
+        db_gtdb = "/work/akiledal/kraken2_db/gtdb_r202",
+        db_refseq = "/work/akiledal/kraken2_db/gtdb_r202"
+    output:
+        refseq = "data/kraken2_contigs/refseq/translated_out.txt",
+        gtdb = "data/kraken2_contigs/gtdb/translated_out.txt"
+    conda: "code/kraken.yaml"
+    resources: cpus=1, mem_mb=50000, time_min=1440, mem_gb = 50
+    shell:
+        """
+        python {input.script} \
+            --krakenout {input.refseq} \
+            --translatedout {output.refseq} \
+            --taxdatadir {params.db_refseq}/taxonomy \
+            --taxaprefixes true
+        
+        python {input.script} \
+            --krakenout {input.gtdb} \
+            --translatedout {output.gtdb} \
+            --taxdatadir {params.db_gtdb}/taxonomy \
+            --taxaprefixes true
+        """
+
+
+rule contig_coverage: 
+    input:
+        contigs = "data/assembly_metaspades/S3_Fallen/contigs.fasta",
+        fwd_reads = "data/qc_sequence_files/S3_Fallen_R1.fastq.gz",
+        rev_reads = "data/qc_sequence_files/S3_Fallen_R2.fastq.gz"
+    output:
+        coverage = "data/contig_coverage.tsv"
+    conda: "code/kraken.yaml"
+    resources: cpus=16, mem_mb=50000, time_min=1440, mem_gb = 50
+    shell:
+        """
+        coverm contig \
+            -1 {input.fwd_reads} \
+            -2 {input.rev_reads} \
+            -r {input.contigs} \
+            --min-read-percent-identity 95 \
+            --methods mean rpkm tpm length covered_bases \
+            -o {output.coverage} \
+            -t {resources.cpus}
+        """
+
 
 
 ### DELETE ALL RESULTS ###
