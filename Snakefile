@@ -26,7 +26,7 @@ for file in file_list:
        os.rename(dir_and_file,new_file)
 
 
-localrules: all, clean, foam_concat
+localrules: all, clean, foam_concat, make_rulegraph
 
 rule all:
     input:
@@ -65,7 +65,9 @@ rule paper_outputs:
         "data/prodigal/S3_Fallen",
         "data/BLAST/ectoine_genes_BLAST.blastn",
         "data/contig_coverage.tsv",
-        "rulegraph.png"
+        "rulegraph.png",
+        "data/human_genome_coverage.tsv",
+        "data/mmseqs/concreteMetaG_report"
 
 
 rule tax_profile:
@@ -806,10 +808,13 @@ rule human_genome_coverage:
     params: 
         bam_dir = "data/map_to_human_genome"
     output: "data/human_genome_coverage.tsv"
-    conda: "code/coverm.yaml"
+    conda: "coverm"
     resources: cpus=64, mem_mb=250000, time_min=10000
     shell:
         """
+        # Currently coverm doesn't support gziped fasta genomes
+        zcat {input.human_genome} > /tmp/human_genome.fasta
+
         coverm genome \
             -t {resources.cpus} \
             -m relative_abundance mean covered_bases variance length count rpkm tpm \
@@ -817,9 +822,11 @@ rule human_genome_coverage:
             --min-covered-fraction 0 \
             -1 {input.fwd_reads} \
             -2 {input.rev_reads} \
-            --genome-fasta-files {input.human_genome} \
+            --genome-fasta-files /tmp/human_genome.fasta \
             --bam-file-cache-directory {params.bam_dir} \
             -o {output}
+
+        rm /tmp/human_genome.fasta
         """
 
 
