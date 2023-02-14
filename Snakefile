@@ -761,6 +761,66 @@ rule contig_coverage:
             -t {resources.cpus}
         """
 
+rule uniref_lca_taxonomy:
+    input:
+        fwd_reads = "data/qc_sequence_files/S3_Fallen_R1.fastq.gz",
+        rev_reads = "data/qc_sequence_files/S3_Fallen_R2.fastq.gz"
+    output:
+        report = "data/mmseqs/concreteMetaG_report"
+    conda:  "code/mmseqs_env.yaml"
+    params:
+        unirefDB = "/home/akiledal/work_akiledal/mmseqs_unirefdb/mmseqs2/uniref100",
+        out_prefix = "data/mmseqs/concreteMetaG",
+        tmp_dir = "/home/akiledal/work_akiledal/mmseqs_unirefdb/tmp/mmseqs2"
+    resources:
+        mem_mb = 500000, cpus=64, time_min=20000
+    shell:
+        """
+        mkdir -p data/mmseqs
+
+        mmseqs \
+            easy-taxonomy \
+            {input.fwd_reads} {input.rev_reads} \
+            {params.unirefDB} \
+            ./{params.out_prefix} \
+            {params.tmp_dir} \
+            --lca-mode 3 \
+            --tax-lineage 1 \
+            --threads {resources.cpus} \
+            --split-memory-limit 450G
+        """
+
+rule get_human_genome:
+    output: "data/reference/human_genome.fasta.gz"
+    resources: time_min=5000
+    shell:
+        """
+        wget -O {output} http://ftp.ebi.ac.uk/pub/databases/gencode/Gencode_human/release_38/GRCh38.p13.genome.fa.gz
+        """
+
+rule human_genome_coverage:
+    input:
+        human_genome = rules.get_human_genome.output,
+        fwd_reads = "data/qc_sequence_files/S3_Fallen_R1.fastq.gz",
+        rev_reads = "data/qc_sequence_files/S3_Fallen_R2.fastq.gz"
+    params: 
+        bam_dir = "data/map_to_human_genome"
+    output: "data/human_genome_coverage.tsv"
+    conda: "code/coverm.yaml"
+    resources: cpus=64, mem_mb=250000, time_min=10000
+    shell:
+        """
+        coverm genome \
+            -t {resources.cpus} \
+            -m relative_abundance mean covered_bases variance length count rpkm tpm \
+            --contig-end-exclusion 0 \
+            --min-covered-fraction 0 \
+            -1 {input.fwd_reads} \
+            -2 {input.rev_reads} \
+            --genome-fasta-files {input.human_genome} \
+            --bam-file-cache-directory {params.bam_dir} \
+            -o {output}
+        """
 
 
 ### DELETE ALL RESULTS ###
