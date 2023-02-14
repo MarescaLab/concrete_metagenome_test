@@ -8,9 +8,10 @@ This repository contains processing and analysis of a shotgun metagenome obtaine
 
 1.  Read quality analysis with fastqc
 2.  Adapter & quality trimming with TrimGalore!
-3.  Taxonomic profiling with Kraken
-4.  Functional profiling with HUMAnN 3.0
-5.  Assembly with metaSPAdes and MEGAHIT
-6.  BLAST search for genes involved in ectoine biosynthesis, transport, and degradation
+3.  Read mapping to human genome to assess contamination 
+4.  Taxonomic profiling with Kraken (k-mers) & MMseqs2 (UniRef LCA)
+5.  Functional profiling with HUMAnN 3.0
+6.  Assembly with metaSPAdes and MEGAHIT
+7.  BLAST search for genes involved in ectoine biosynthesis, transport, and degradation
 
 All computational analyses run are defined in the Snakefile which can be reproducibly run using [snakemake](https://snakemake.readthedocs.io/en/stable/).
