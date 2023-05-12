@@ -322,6 +322,31 @@ rule kraken2_refseq: ##Run kraken2
         bracken -d {params.db} -i {output.report} -o {output.bracken} -w {output.bracken_report}
         """
 
+rule add_lineage_to_kraken_refseq:
+    input:
+        db = ancient("/home/akiledal/concrete_metagenome_test/data/reference/ncbi_tax"),
+        report = "data/kraken2_euk/{sample}_brackenReport.txt"
+    output: 
+        inspect_w_lineage = "data/kraken2_euk/{sample}_brackenReport_w_full_lineage.txt",
+        inspect_w_7_lev_lineage = "data/kraken2_euk/{sample}_brackenReport_w_standardized_lineage.txt"
+    conda: "code/taxonkit.yaml"
+    resources: cpus=1, mem_mb=250000, time_min=5440, mem_gb = 250
+    shell:
+        """
+        taxonkit lineage \
+            {input.report} \
+            --data-dir {input.db} \
+            -i 5 \
+            -o {output.inspect_w_lineage} 2>&1 | tee {log}
+
+        taxonkit reformat \
+            {output.inspect_w_lineage} \
+            --data-dir {input.db} \
+            -i 7 \
+            -P \
+            -o {output.inspect_w_7_lev_lineage} 2>&1 | tee -a {log}
+        """
+
 rule humann_db_download:
     output:
         "/work/akiledal/humann3/all_genes_annot.1.bt2l",
@@ -396,13 +421,22 @@ rule humann:
 rule prodigal:
     input:
         contigs="data/assembly_metaspades/{sample}/contigs.fasta"
-    output: directory("data/prodigal/{sample}")
+    output: 
+        dir = directory("data/prodigal/{sample}"),
+        genes = "data/prodigal/{sample}/genes.fasta",
+        aa_seqs = "data/prodigal/{sample}/proteins.faa",
+        gbk = "data/prodigal/{sample}/genes.gbk"
     conda: "code/master_env.yaml"
     resources: cpus=1, mem_mb=50000, time_min=1440
     shell:
         """
-        mkdir {output}
-        prodigal -i {input.contigs} -o {output}/genes.gbk -a {output}/proteins.faa -p meta
+        mkdir -p {output.dir}
+        prodigal \
+            -i {input.contigs} \
+            -o {output.dir}/genes.gbk \
+            -a {output.dir}/proteins.faa \
+            -d {output.dir}/genes.fasta \
+            -p meta
         """
 
 #FOAM hmm functional profiling
@@ -792,6 +826,35 @@ rule uniref_lca_taxonomy:
             --split-memory-limit 450G
         """
 
+rule uniref_lca_taxonomy_assembly:
+    input:
+        assembly = "data/assembly_metaspades/{sample}/contigs.fasta"
+    output:
+        report = "data/mmseqs_assembly/{sample}_report"
+    conda:  "code/mmseqs_env.yaml"
+    params:
+        unirefDB = "/home/akiledal/work_akiledal/mmseqs_unirefdb/mmseqs2/uniref100",
+        out_prefix = "data/mmseqs/{sample}",
+        tmp_dir = "/home/akiledal/work_akiledal/mmseqs_unirefdb/tmp/mmseqs2_assembly"
+    resources:
+        mem_mb = 500000, cpus=64, time_min=20000
+    shell:
+        """
+        mkdir -p data/mmseqs_assembly
+
+        mmseqs \
+            easy-taxonomy \
+            {input.assembly} \
+            {params.unirefDB} \
+            ./{params.out_prefix} \
+            {params.tmp_dir} \
+            --lca-mode 3 \
+            --tax-lineage 1 \
+            --threads {resources.cpus} \
+            --split-memory-limit 450G
+        """
+
+
 rule get_human_genome:
     output: "data/reference/human_genome.fasta.gz"
     resources: time_min=5000
@@ -827,6 +890,373 @@ rule human_genome_coverage:
             -o {output}
 
         rm /tmp/human_genome.fasta
+        """
+
+rule add_lineage_to_unirefLCAtax:
+    input:
+        db = ancient("/home/akiledal/concrete_metagenome_test/data/reference/ncbi_tax"),
+        report = "data/mmseqs/concreteMetaG_report"
+    output: 
+        inspect_w_lineage = "data/mmseqs/concreteMetaG_report_w_full_lineage",
+        inspect_w_7_lev_lineage = "data/mmseqs/concreteMetaG_report_w_standardized_lineage"
+    conda: "code/taxonkit.yaml"
+    resources: cpus=1, mem_mb=250000, time_min=5440, mem_gb = 250
+    shell:
+        """
+        taxonkit lineage \
+            {input.report} \
+            --data-dir {input.db} \
+            -i 5 \
+            -o {output.inspect_w_lineage} 2>&1 | tee {log}
+
+        taxonkit reformat \
+            {output.inspect_w_lineage} \
+            --data-dir {input.db} \
+            -i 7 \
+            -P \
+            -o {output.inspect_w_7_lev_lineage} 2>&1 | tee -a {log}
+        """
+
+
+rule uniref_lca_taxonomy_bigSample:
+    input:
+        fwd_reads = "/work/akiledal/concrete_metagenomes/ST2a_R1.fastq.gz",
+        rev_reads = "/work/akiledal/concrete_metagenomes/ST2a_R2.fastq.gz"
+    output:
+        report = "/work/akiledal/concrete_metagenomes/concreteMetaG_report"
+    conda:  "code/mmseqs_env.yaml"
+    params:
+        unirefDB = "/home/akiledal/work_akiledal/mmseqs_unirefdb/mmseqs2/uniref100",
+        out_prefix = "/work/akiledal/concrete_metagenomes/concreteMetaG",
+        #tmp_dir = "/scratch/akiledal/mmseqs2"
+        #tmp_dir = "/home/akiledal/work_akiledal/mmseqs_unirefdb/tmp/mmseqs2"
+        tmp_dir = "/dev/shm/akiledal/mmseqs2"
+    resources:
+        mem_mb = 1800000, cpus=36, time_min=20000
+    shell:
+        """
+        mkdir -p {params.tmp_dir}
+
+        mmseqs touchdb {params.unirefDB}
+
+        mmseqs \
+            easy-taxonomy \
+            {input.fwd_reads} {input.rev_reads} \
+            {params.unirefDB} \
+            {params.out_prefix} \
+            {params.tmp_dir} \
+            --lca-mode 3 \
+            --orf-filter 1 \
+            --orf-filter-s 3.5 \
+            --db-load-mode 2 \
+            -s 4 \
+            --threads {resources.cpus} \
+            --split-memory-limit 1200G
+
+        rm -r {params.tmp_dir}
+        printf "Done, and deleted temp dir"
+        """
+
+rule uniref_lca_taxonomy_contigs:
+    input:
+        fwd_reads = "data/assembly_metaspades/S3_Fallen/contigs.fasta"
+    output:
+        report = "data/contigs_LCA/S3_Fallen/assembly_LCA_report"
+    conda:  "code/mmseqs_env.yaml"
+    params:
+        unirefDB = "/home/akiledal/work_akiledal/mmseqs_unirefdb/mmseqs2/uniref100",
+        out_prefix = "data/contigs_LCA/S3_Fallen/assembly_LCA",
+        #tmp_dir = "/scratch/akiledal/mmseqs2"
+        #tmp_dir = "/home/akiledal/work_akiledal/mmseqs_unirefdb/tmp/mmseqs2"
+        tmp_dir = "/dev/shm/akiledal/mmseqs2"
+    resources:
+        mem_mb = 1800000, cpus=36, time_min=20000
+    shell:
+        """
+        mkdir -p {params.tmp_dir}
+
+        mmseqs touchdb {params.unirefDB}
+
+        mmseqs \
+            easy-taxonomy \
+            {input.fwd_reads} \
+            {params.unirefDB} \
+            {params.out_prefix} \
+            {params.tmp_dir} \
+            --lca-mode 3 \
+            --orf-filter 1 \
+            --orf-filter-s 3.5 \
+            --db-load-mode 2 \
+            -s 4 \
+            --threads {resources.cpus} \
+            --split-memory-limit 1200G
+
+        rm -r {params.tmp_dir}
+        printf "Done, and deleted temp dir"
+        """
+
+
+rule add_lineage_to_unirefLCAtax_contigs:
+    input:
+        db = ancient("/home/akiledal/concrete_metagenome_test/data/reference/ncbi_tax"),
+        report = "data/contigs_LCA/S3_Fallen/assembly_LCA_report"
+    output: 
+        inspect_w_lineage = "data/contigs_LCA/S3_Fallen/assembly_LCA_report_w_full_lineage",
+        inspect_w_7_lev_lineage = "data/contigs_LCA/S3_Fallen/assembly_LCA_report_w_standardized_lineage"
+    conda: "code/taxonkit.yaml"
+    resources: cpus=1, mem_mb=250000, time_min=5440, mem_gb = 250
+    shell:
+        """
+        taxonkit lineage \
+            {input.report} \
+            --data-dir {input.db} \
+            -i 5 \
+            -o {output.inspect_w_lineage} 2>&1 | tee {log}
+
+        taxonkit reformat \
+            {output.inspect_w_lineage} \
+            --data-dir {input.db} \
+            -i 7 \
+            -P \
+            -o {output.inspect_w_7_lev_lineage} 2>&1 | tee -a {log}
+        """
+
+
+rule sourmash_sketch:
+    input:
+       f_seq = "data/qc_sequence_files/{sample}_R1.fastq.gz",
+       r_seq = "data/qc_sequence_files/{sample}_R2.fastq.gz"
+    output:
+       sig = "data/sourmash/{sample}/{sample}.sig"
+    conda: "code/sourmash.yaml"
+    log: "logs/sourmash_sketch/{sample}.log"
+    benchmark: "benchmarks/sourmash_sketch/{sample}.txt"
+    resources: cpus=1, time_min=4320, mem_mb = 20000
+    shell:
+        """
+        sourmash sketch dna -p k=21,k=31,k=51,scaled=1000,abund --merge {wildcards.sample} -o {output.sig} {input.f_seq} {input.r_seq} 2>&1 | tee {log}
+        """
+
+rule sourmash_gather:
+    input:
+       sig = "data/sourmash/{sample}/{sample}.sig",
+       gtdb_refDB = "/work/akiledal/sourmash_db/gtdb-rs207.dna.k31.zip",
+       taxDB = "/work/akiledal/sourmash_db/gtdb_and_Microcystis_tax.db"
+    output:
+       reps = "data/sourmash/{sample}/{sample}_gather_gtdbrs207_reps.csv",
+       tax = "data/sourmash/{sample}/{sample}_gather_gtdbrs207_reps.with-lineages.csv"
+    conda: "code/sourmash.yaml"
+    log: "logs/sourmash/{sample}.log"
+    benchmark: "benchmarks/sourmash/{sample}.txt"
+    resources: cpus=1, time_min=4320, mem_mb = 20000
+    shell:
+        """
+        sourmash gather {input.sig} {input.gtdb_refDB} -o {output.reps} 2>&1 | tee -a {log}
+
+        sourmash tax annotate -g {output.reps} -t {input.taxDB} 2>&1 | tee -a {log}
+
+        mv $(basename {output.tax}) $(dirname {output.tax})
+        """
+
+rule sourmash_genome_coverage:
+    input:
+        fwd_reads = "data/qc_sequence_files/S3_Fallen_R1.fastq.gz",
+        rev_reads = "data/qc_sequence_files/S3_Fallen_R2.fastq.gz"
+    params: 
+        bam_dir = "data/map_to_human_genome",
+        genome_dir = "data/sourmash/S3_Fallen/genomes"
+    output: "data/sourmash/S3_Fallen/genome_coverage.tsv"
+    conda: "coverm"
+    resources: cpus=64, mem_mb=250000, time_min=10000
+    shell:
+        """
+        coverm genome \
+            -t {resources.cpus} \
+            -m relative_abundance mean covered_bases variance length count rpkm tpm \
+            --min-covered-fraction 0 \
+            -1 {input.fwd_reads} \
+            -2 {input.rev_reads} \
+            --genome-fasta-files {params.genome_dir}/*.fasta \
+            -o {output}
+            #--bam-file-cache-directory {params.bam_dir} \
+        """
+
+
+
+
+rule prodigal_genomes:
+    input:
+        genome = "data/sourmash/S3_Fallen/genomes/{genome}.fasta"
+    output: 
+        proteins = "data/sourmash/S3_Fallen/genomes/prodigal/{genome}.faa",
+        genes = "data/sourmash/S3_Fallen/genomes/prodigal/{genome}.gff"
+    resources: cpus = 1, mem_mb = 10000
+    shell:
+        """
+        prodigal -i {input.genome} -a {output.proteins} -d {output.genes} #1>{log} 2>&1
+        """
+
+
+rule traitar:
+    input:
+        bin_genes = expand("data/sourmash/S3_Fallen/genomes/prodigal/{genome}.faa", genome = glob_wildcards("data/sourmash/S3_Fallen/genomes/{genome}.fasta").genome),
+        pfam_db = "/work/akiledal/traitar_pfamDB",
+        #bin_dir = "data/omics/metagenomes/metagenome_bins",
+        sample_file = "data/sourmash/S3_Fallen/genomes/traitar_sample_list.tsv"
+    params:
+        bin_dir = "data/sourmash/S3_Fallen/genomes",
+        gene_dir = "data/sourmash/S3_Fallen/genomes/prodigal",
+        out_dir = "data/sourmash/S3_Fallen/genomes/traitar"
+    output: 
+        #directory("data/omics/metagenomes/metagenome_bins/traitar")
+        touch("data/sourmash/S3_Fallen/genomes/traitar/.done")
+    container: "library://a_gihawi/traitar3/traitar3"
+    resources: cpus = 1, mem_mb = 170000, time_min=2880 #, partition = "largemem"
+    shell:
+        """
+        #mkdir -p {params.out_dir}
+
+        traitar phenotype --overwrite -c {resources.cpus} /db {params.gene_dir} {input.sample_file} from_genes {params.out_dir}
+        """
+
+rule bakta:
+    input:
+        genome = "data/sourmash/S3_Fallen/genomes/{genome}.fasta"
+    output:
+        dir = directory("data/sourmash/S3_Fallen/genomes/bakta/{genome}")
+    params:
+        db = "/work/akiledal/bakta/db"
+    conda: "code/bakta.yaml"
+    log: "logs/bakta/{genome}.tsv"
+    benchmark: "benchmarks/bakta/{genome}.tsv"
+    resources: cpus=24, mem_mb=48000, time_min=10000, 
+    shell:
+        """
+        bakta --db {params.db} \
+            --output {output.dir} \
+            --threads {resources.cpus} \
+            {input.genome} | tee {log}
+        """
+
+import pandas as pd
+bakta_df = pd.read_table('data/sourmash/S3_Fallen/genomes/bakta_dirs.tsv').set_index("bakta_dir", drop=False)
+bakta_genome_names = list(bakta_df['bakta_dir'])
+
+rule run_bakta:
+    input:
+        bakta_genome_names
+
+
+rule bakta_assembly:
+    input:
+        genome = "data/assembly_metaspades/{sample}/contigs.fasta",
+        prot = "data/prodigal/{sample}/proteins.faa"
+    output:
+        dir = directory("data/bakta_assembly/{sample}/")
+    params:
+        db = "/work/akiledal/bakta/db"
+    conda: "code/bakta.yaml"
+    log: "logs/bakta_assembly/{sample}.tsv"
+    benchmark: "benchmarks/bakta_assembly/{sample}.tsv"
+    resources: cpus=64, mem_mb=48000, time_min=20000, 
+    shell:
+        """
+        bakta \
+            --proteins {input.prot} \
+            --db {params.db} \
+            --output {output.dir} \
+            --threads {resources.cpus} \
+            {input.genome} \
+            | tee {log}
+        
+        # --meta # use with newwer versions
+        """
+
+
+rule kofam_scan:
+    input:
+        genes = rules.prodigal_genomes.output.genes,
+        profile = "/home/akiledal/work_akiledal/kofamscan/profiles",
+        ko_list = "/home/akiledal/work_akiledal/kofamscan/ko_list"
+    output:
+        ko_annot = "data/sourmash/S3_Fallen/genomes/{genome}/kofam_results.txt"
+    conda: "code/kofamscan.yaml"
+    #shadow: "shallow"
+    benchmark: "benchmarks/kofamscan/{genome}.txt"
+    log: "logs/kofamscan/{genome}.log"
+    resources: cpus=24, time_min = 20000, mem_mb = lambda wildcards, attempt: attempt * 100000
+    shell:
+        """
+        exec_annotation \
+            -o {output.ko_annot} \
+            --cpu={resources.cpus}  \
+            --profile {input.profile} \
+            --tmp-dir=/tmp/{wildcards.genome}_kofamscan \
+            --ko-list {input.ko_list} {input.genes}
+        """
+
+rule run_kofamscan:
+    input: expand("data/sourmash/S3_Fallen/genomes/{genome}/kofam_results.txt", genome = glob_wildcards("data/sourmash/S3_Fallen/genomes/bakta/{genome}/{other}.faa").genome)
+
+rule kofamscan_assembly:
+    input:
+        genes = "data/prodigal/{sample}/genes.fasta",
+        profile = "/home/akiledal/work_akiledal/kofamscan/profiles",
+        ko_list = "/home/akiledal/work_akiledal/kofamscan/ko_list"
+    output:
+        ko_annot = "data/kofamScan_assembly/{sample}/kofam_results.txt"
+    conda: "code/kofamscan.yaml"
+    params:
+        tmp_dir = "/work/akiledal/run_kofamscan/{sample}"
+    #shadow: "shallow"
+    benchmark: "benchmarks/kofamscan_assembly/{sample}.txt"
+    log: "logs/kofamscan_assembly/{sample}.log"
+    resources: cpus=72, time_min = 20000, mem_mb = lambda wildcards, attempt: attempt * 100000
+    shell:
+        """
+        mkdir -p {params.tmp_dir}
+
+        exec_annotation \
+            -o {output.ko_annot} \
+            --format=detail-tsv \
+            --cpu={resources.cpus}  \
+            --profile {input.profile} \
+            --tmp-dir={params.tmp_dir} \
+            --ko-list {input.ko_list} {input.genes} > {log}
+        """
+
+rule calc_gene_abundance:
+    input:
+        genes = "data/prodigal/{sample}/genes.fasta" ,
+        #proteins = rules.prodigal.output.proteins,
+        fwd_reads = "data/qc_sequence_files/{sample}_R1.fastq.gz",
+        rev_reads = "data/qc_sequence_files/{sample}_R2.fastq.gz"
+    output:
+        reads_vs_genes_rpkm = "data/gene_abund/{sample}_READSvsGENES.rpkm",
+        #reads_vs_contigs_rpkm = "data/omics/{sample_type}/{sample}/assembly/{sample}_READSvsCONTIGS.rpkm",
+        #reads_vs_assembly_sam_gz = "data/omics/{sample_type}/{sample}/assembly/{sample}_READSvsCONTIGS.sam.gz"
+    params:
+        #reads_vs_assembly_sam = "data/omics/{sample_type}/{sample}/assembly/{sample}_READSvsCONTIGS.sam"
+    conda: "code/bbmap.yaml"
+    log: "logs/gene_abund/{sample}.txt"
+    resources: cpus = 24, mem_mb = lambda wildcards, attempt: attempt * 64000, time_min = 5880
+    shell:
+        """
+        bbmap.sh \
+            t={resources.cpus} \
+            ambig=random \
+            cigar=f \
+            maxindel=100 \
+            pairlen=600 \
+            minid=0.999 \
+            idtag=t \
+            printunmappedcount=t \
+            overwrite=t \
+            in1={input.fwd_reads} \
+            in2={input.rev_reads} \
+            path=$(dirname {output.reads_vs_genes_rpkm}) \
+            ref={input.genes} \
+            rpkm={output.reads_vs_genes_rpkm} 2>&1 | tee -a {log}
         """
 
 

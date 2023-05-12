@@ -1,6 +1,6 @@
 jobs: 25
-cluster: "sbatch --time={resources.time_min} --mem={resources.mem_mb} -c {resources.cpus} -o slurm/logs/{rule}_{wildcards} -e slurm/logs/{rule}_{wildcards} --mail-type=ALL --mail-user=akiledal@udel.edu --exclude=biomix22"
+cluster: "sbatch --time={resources.time_min} --mem={resources.mem_mb} -c {resources.cpus} -o slurm/logs/{rule}_{wildcards} -e slurm/logs/{rule}_{wildcards} --mail-type=ALL --mail-user=akiledal@udel.edu"
 use-conda: true
 default-resources: [cpus=4, mem_mb=16000, time_min=120]
-resources: [cpus=102, mem_mb=1000000]
+resources: [cpus=102, mem_mb=5000000]
 latency-wait: 60

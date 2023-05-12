@@ -1,0 +1,171 @@
+---
+title: "R Notebook"
+output: html_notebook
+---
+
+```{r setup, include=FALSE}
+knitr::opts_knit$set(root.dir = here::here())
+library(tidyverse)
+```
+
+While we could use other methods such as traitar and/or PHENDB for metagneomic data, 
+16S data requires a reference-based approach. For 16S data, one could likely extrapolate from 
+pfam or eggnog annotations obtained with picrust2. Here we use BacDive--a 
+database of bacterial phenotypic information--to obtain phenotype data derived from
+experimental work.
+
+Install BacDive API access package
+```{r}
+#install.packages("BacDive", repos="http://R-Forge.R-project.org")
+```
+
+Load BacDive
+```{r}
+library(BacDive)
+```
+
+Get BacDive auth.
+```{r}
+bacdive <- BacDive::open_bacdive("kiledal@umich.edu",password = "sGcBn2$P&iTz#Y")
+```
+
+Function for getting oxygen tolerance
+```{r}
+cols <- c("ra_and_subs","reads_and_subs","reads","rank","NCBI_id","tax","full_lineage","lineage")
+
+mmseqs <- read_tsv("data/mmseqs/concreteMetaG_report_w_standardized_lineage", 
+                   col_names = cols,trim_ws = F)
+
+tax_levels <- c("root", "kingdom", "phylum", "class", "order", "family","genus","species")
+
+tax_profile <- mmseqs %>% 
+  mutate(rel_abund = reads / sum(reads)) %>% 
+  filter(!tax %in% c("unclassified","  cellular organisms")) %>% 
+  mutate(lineage = str_glue("r__Root;{lineage}"),
+         lineage = str_remove_all(lineage, "(;[a-z]__)*$")) %>% 
+  filter(!str_detect(lineage, ";NA")) %>% 
+  separate(lineage, into = tax_levels, remove = FALSE,sep = ";") %>% 
+  mutate(across(tax_levels, ~str_remove(.x, "[a-z]__")))
+
+genus_abund <- tax_profile %>% 
+  group_by(kingdom,phylum,class,order, family, genus) %>% 
+  summarise(rel_abund = sum(rel_abund)) %>% 
+  arrange(desc(rel_abund))
+
+unique_genera <- genus_abund %>% 
+  filter(!is.na(genus) & genus != "") %>% 
+  pull(genus) %>% unique()
+  
+
+genus <- "Campylobacter"
+genus <- "this_is_a_fake_name"
+i = 30
+
+
+get_O2_tolerance <- function(genus){
+  
+  #ids <- request(bacdive, genus , "taxon")
+  
+  data <- retrieve(object = bacdive, query = genus,search = "taxon", sleep = 0.1)
+  
+  if (length(data) > 0) {
+  
+    has_o2_tolerance <- numeric()
+    for (i in (1:length(data))) {
+      if (!is.null(data[[i]][["Physiology and metabolism"]][["oxygen tolerance"]])) {
+        has_o2_tolerance <- c(has_o2_tolerance,i)
+      }
+    }
+    
+    data2 <- data[has_o2_tolerance]
+    
+    if (length(data2) > 0) {
+    
+      extracted_oxygen_tolerance_ids <- purrr::map(data2,~.x$`Physiology and metabolism`$`oxygen tolerance`$`@ref`) %>% 
+        unlist() %>% 
+        as.character() %>% 
+        data.frame(id = .)
+      
+      extracted_oxygen_tolerance <- purrr::map(data2,~.x$`Physiology and metabolism`$`oxygen tolerance`$`oxygen tolerance`) %>% 
+        unlist() %>% 
+        as.character() %>% 
+        data.frame(oxygen_tolerance = .) #%>% 
+        bind_cols(extracted_oxygen_tolerance_ids) %>% 
+        mutate(genus = genus)
+    } else return(data.frame(genus = genus, oxygen_tolerance = "not_found"))
+    
+    return(extracted_oxygen_tolerance)
+  } else return(data.frame(genus = genus, oxygen_tolerance = "not_found"))
+  
+}
+```
+
+
+
+```{r}
+example_oxy_tolerance <- map_df(unique_genera[1:1000],get_O2_tolerance)
+
+saveRDS(example_oxy_tolerance, "data/bacdive_oxy_tolerance.rds")
+
+example_oxy_tolerance <- read_rds("data/bacdive_oxy_tolerance.rds")
+
+oxy_tolerance_wide <- example_oxy_tolerance %>% 
+  group_by(genus, oxygen_tolerance) %>% 
+  summarise(count = n()) %>% 
+  pivot_wider(names_from = oxygen_tolerance, values_from = count) %>% 
+  right_join(genus_abund %>% select(any_of(tax_levels), rel_abund)) %>% 
+  relocate(any_of(tax_levels), rel_abund)
+
+top_oxy_tolerance_wide <- example_oxy_tolerance %>% 
+  group_by(genus, oxygen_tolerance) %>% 
+  summarise(count = n()) %>% 
+  group_by(genus) %>% 
+  slice_max(count, n = 1,with_ties = FALSE) %>% 
+  pivot_wider(names_from = oxygen_tolerance, values_from = count) %>% 
+  left_join(genus_abund %>% select(any_of(tax_levels), rel_abund))    
+
+
+rel_abund_w_ox_tolerance <- example_oxy_tolerance %>% 
+  group_by(genus, oxygen_tolerance) %>% 
+  summarise(count = n()) %>% 
+  group_by(genus) %>% 
+  slice_max(count, n = 1,with_ties = FALSE) %>% 
+  left_join(genus_abund %>% select(any_of(tax_levels), rel_abund))
+
+rel_abund_by_ox_tolerance <- rel_abund_w_ox_tolerance %>% 
+  group_by(oxygen_tolerance) %>% 
+  summarise(abund = sum(rel_abund) %>% round(5))
+
+rel_abund_by_ox_tolerance %>% 
+  filter(oxygen_tolerance != "not_found") %>% 
+  pull("abund") %>% 
+  sum()
+
+```
+
+
+```{r}
+rel_abund_by_ox_tolerance %>% 
+  mutate(other = 1 - sum(abund),
+         abund = if_else(oxygen_tolerance == "not_found", abund + other, abund)) %>% 
+  ggplot(aes(1, abund, fill = oxygen_tolerance)) +
+  geom_bar(stat = "identity")
+
+rel_abund_by_ox_tolerance %>% 
+  mutate(other = 1 - sum(abund),
+         abund = if_else(oxygen_tolerance == "not_found", abund + other, abund)) %>% 
+  filter(oxygen_tolerance != "not_found") %>% 
+  ggplot(aes(1, abund, fill = oxygen_tolerance)) +
+  geom_bar(stat = "identity")
+
+
+```
+
+
+
+
+
+
+
+
+

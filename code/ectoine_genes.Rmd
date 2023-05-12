@@ -11,11 +11,10 @@ knitr::opts_knit$set(root.dir = here::here())
 library(tidyverse)
 ```
 
-
+## Contig tax from kraken
 ```{r}
 contig_tax <- read_tsv("data/kraken2_contigs/gtdb/translated_out.txt",col_names = c("contig","contig_taxonomy"))
 ```
-
 
 
 ```{r}
@@ -130,4 +129,202 @@ blast_res_filtered %>%
 ggsave("results/Ectoine_gene_coverage_to_Phylum.png",width = 3, height = 1.2, dpi = 600, scale = 3)
 
 ```
+
+## Contig tax from mmseqs
+
+(1) a single taxonomy numeric identifier
+(2) a taxonomic rank column
+(3) taxonomic name column, columns for the number of fragments: (3) retained, (4) taxonomically assigned, and (5) in agreement with the contig
+label (i.e. same taxid or have it as an ancestor), (5) the support received.
+```{r}
+col_names <- c("ra_and_subs","reads_and_subs","reads","rank","NCBI_id","tax","full_lineage","lineage")
+
+contig_tax_report <- read_tsv("data/contigs_LCA/S3_Fallen/assembly_LCA_report_w_standardized_lineage",col_names = col_names)
+
+id_lineage_mapping <- contig_tax_report %>% select(NCBI_id, lineage)
+
+col_names <- c("contig","NCBI_id","rank","tax","frags_retained","frags_tax_assigned","frags_agreeing_w_contig_label","support")
+
+tax_levels <- c("Kingdom", "Phylum", "Class", "Order", "Family", "Genus", "Species")
+
+contig_tax_mmseqs <- read_tsv("data/contigs_LCA/S3_Fallen/assembly_LCA_lca.tsv", col_names = col_names) %>% 
+  left_join(id_lineage_mapping) %>% 
+  separate(lineage, into = tax_levels, remove = FALSE,sep = ";") %>% 
+  mutate(across(tax_levels, ~str_remove(.x, "^[a-z]__$")),
+         lineage = if_else(tax == "unclassified", "unclassified", lineage),
+         Kingdom = if_else(tax == "unclassified", "unclassified", Kingdom))
+
+
+```
+
+
+
+```{r fig.height=4, fig.width=10}
+gene_data <- read_csv("data/reference/ectoine_metabolism_genes.csv")
+
+blast6_cols <- c("Query", "Subject", "Percent_ID", "Aln_Len", "Mismatch", "Gap", "Query_Start", "Query_Stop", "Subject_Start", "Subject_Stop", "E-Value", "Bit_Score", "percent_of_query_aligned", "subject_title","aligned_qeuery_seq", "aligned_subject_seq")
+
+contig_coverage <- read_tsv("data/contig_coverage.tsv") %>% 
+  rename_all(~str_remove(.x,".* "))
+
+blast_res <- read_tsv("data/BLAST/ectoine_genes_BLAST.blastn", skip = 1,col_types = "ccdiddiiiidddccc", col_names = blast6_cols) %>% 
+  left_join(gene_data) %>% 
+  left_join(contig_tax_mmseqs %>% rename(subject_title = "contig")) %>% 
+  left_join(contig_coverage %>% rename(subject_title = "Contig"))
+
+# Filter using EggNog Mapper filtering criteria
+blast_res_filtered <- blast_res %>% 
+  filter(`E-Value` < 0.001, Bit_Score > 60, Percent_ID > 40, percent_of_query_aligned > 20) 
+
+blast_res_filtered %>% 
+  group_by(geneID,synth_or_deg, Kingdom, Phylum, Class, Order, Family) %>% 
+  summarise(RPKM = mean(RPKM),
+            Mean = mean(Mean),
+            taxonomy = paste(Kingdom, Phylum, Class, Order, Family, sep = "; ") %>% str_remove_all("[; ]*$")) %>% 
+  group_by(taxonomy) %>% filter(length(unique(geneID)) > 2, taxonomy != "k__Bacteria") %>% 
+  ggplot(aes(geneID, str_wrap(taxonomy, width = 60), fill = Mean)) +
+  geom_tile() + 
+  scale_fill_viridis_c() +
+  facet_grid(~synth_or_deg,scales = "free_x",space = "free_x") +
+  labs(y = NULL, x= "Gene" , fill ="Mean\nCoverage") +
+  theme_bw()
+
+ggsave("results/Ectoine_gene_coverage_mmseqs.png",width = 4, height = 2, dpi = 600, scale = 3)
+ggsave("results/Ectoine_gene_coverage_mmseqs.pdf",width = 4, height = 2, dpi = 600, scale = 3)
+ggsave("results/Ectoine_gene_coverage_mmseqs.eps",width = 4, height = 2, dpi = 600, scale = 3)
+
+
+blast_res_filtered %>% 
+  mutate(contig_taxonomy = str_remove(contig_taxonomy,"\\|o__.*"),
+         contig_taxonomy = str_remove_all(contig_taxonomy,"\\|[a-z]__unassigned"),
+         contig_taxonomy = str_replace_all(contig_taxonomy,"\\|o","\no"),
+         contig_taxonomy = str_replace_all(contig_taxonomy,"\\|"," | "),
+         contig_taxonomy = if_else(is.na(contig_taxonomy),"Unclassified",contig_taxonomy)) %>% 
+  group_by(contig_taxonomy,geneID,synth_or_deg) %>% 
+  summarise(RPKM = mean(RPKM),
+            Mean = mean(Mean)) %>% ungroup() %>% group_by(contig_taxonomy) %>% 
+  mutate(contig_taxonomy = if_else(contig_taxonomy == "k__Bacteria","Other Bacteria",contig_taxonomy),
+         contig_taxonomy = str_remove(contig_taxonomy, "k__"),
+         num_genes = sum(Mean > 0)) %>% 
+  #ggplot(aes(geneID, factor(contig_taxonomy,levels = tax_order, ordered = TRUE) , fill = Mean)) +
+  ggplot(aes(geneID, contig_taxonomy, fill = Mean)) +
+  geom_tile() + 
+  scale_fill_viridis_c() +
+  facet_grid(~synth_or_deg,scales = "free_x",space = "free_x") +
+  labs(y = NULL, x= "Gene" , fill ="Mean Contig\nRead Coverage") +
+  theme_bw() +
+  scale_y_discrete(limits=rev) +
+  theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank())
+
+ggsave("results/Ectoine_gene_coverage_to_Class.png",width = 3, height = 1.5, scale = 3.5, type = "cairo")
+ggsave("results/Ectoine_gene_coverage_to_Class.svg",width = 3, height = 1.5, dpi = 600, scale = 3.5)
+
+
+blast_res_filtered %>% 
+  filter(Query_tax =="Halobacillus halophilus") %>% 
+  mutate(contig_taxonomy = str_remove(contig_taxonomy,"\\|o__.*"),
+         contig_taxonomy = str_remove_all(contig_taxonomy,"\\|[a-z]__unassigned"),
+         contig_taxonomy = str_replace_all(contig_taxonomy,"\\|o","\no"),
+         contig_taxonomy = str_replace_all(contig_taxonomy,"\\|"," | "),
+         contig_taxonomy = if_else(is.na(contig_taxonomy),"Unclassified",contig_taxonomy)) %>% 
+  group_by(contig_taxonomy,geneID,synth_or_deg) %>% 
+  summarise(RPKM = mean(RPKM),
+            Mean = mean(Mean)) %>% ungroup() %>% group_by(contig_taxonomy) %>% 
+  mutate(contig_taxonomy = if_else(contig_taxonomy == "k__Bacteria","Other Bacteria",contig_taxonomy),
+         contig_taxonomy = str_remove(contig_taxonomy, "k__"),
+         num_genes = sum(Mean > 0)) %>% 
+  ggplot(aes(geneID, reorder(contig_taxonomy,num_genes) , fill = Mean)) +
+  geom_tile() + 
+  scale_fill_viridis_c() +
+  facet_grid(~synth_or_deg,scales = "free_x",space = "free_x") +
+  labs(y = NULL, x= "Gene" , fill ="Mean Contig\nRead Coverage") +
+  theme_bw() +
+  scale_y_discrete(limits=rev) +
+  theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank())
+
+ggsave("results/Ectoine_gene_coverage_to_Class_only_Halobacillus_ectGenes.png",width = 3, height = 1.5, dpi = 600, scale = 2.5)
+ggsave("results/Ectoine_gene_coverage_to_Class_only_Halobacillus_ectGenes.svg",width = 3, height = 1.5, dpi = 600, scale = 2.5)
+
+
+blast_res_filtered %>% 
+  mutate(contig_taxonomy = str_remove(contig_taxonomy,"\\|c__.*"),
+         contig_taxonomy = str_remove_all(contig_taxonomy,"\\|[a-z]__unassigned"),
+         contig_taxonomy = str_replace_all(contig_taxonomy,"\\|o","\no"),
+         contig_taxonomy = str_replace_all(contig_taxonomy,"\\|"," | "),
+         contig_taxonomy = if_else(is.na(contig_taxonomy),"Unclassified",contig_taxonomy)) %>% 
+  group_by(contig_taxonomy,geneID,synth_or_deg) %>% 
+  summarise(RPKM = mean(RPKM),
+            Mean = mean(Mean)) %>% ungroup() %>% group_by(contig_taxonomy) %>% 
+  mutate(contig_taxonomy = if_else(contig_taxonomy == "k__Bacteria","Other Bacteria",contig_taxonomy),
+         contig_taxonomy = str_remove(contig_taxonomy, "k__"),
+         num_genes = sum(Mean > 0)) %>% 
+  ggplot(aes(geneID, reorder(contig_taxonomy,num_genes) , fill = Mean)) +
+  geom_tile() + 
+  scale_fill_viridis_c() +
+  facet_grid(~synth_or_deg,scales = "free_x",space = "free_x") +
+  labs(y = NULL, x= "Gene" , fill ="Mean\nCoverage") +
+  theme_bw()
+
+ggsave("results/Ectoine_gene_coverage_to_Phylum.png",width = 3, height = 1.2, dpi = 600, scale = 3)
+
+```
+
+
+## KOFAMscan
+```{r}
+cols <- c("sig","gene_name", "KO", "thrshld", "score","e_value","KO_definition")
+
+kofams <- read_tsv("data/kofamScan_assembly/S3_Fallen/kofam_results.txt", col_names = cols, skip = 1) 
+
+```
+
+## UNIREF read mapping with mmseqs
+
+```{r}
+bakta_con <- DBI::dbConnect(RSQLite::SQLite(),"~/work/bakta/db/bakta.db")
+
+bakta_db <- RSQLite::dbListTables(bakta_con)
+
+unique_seqs <- tbl(bakta_con, "ups")
+
+uniref100_info <- tbl(bakta_con, "ips")
+
+uniref90_info <- tbl(bakta_con, "psc")
+uniref50_info <- tbl(bakta_con, "pscc")
+
+test <- unique_seqs %>% glimpse()
+```
+
+
+
+(1) Target identifier
+(2) Number of sequences aligning to target
+(3) Unique coverage of target uniqueAlignedResidues / targetLength
+(4) Target coverage alignedResidues / targetLength
+(5) Average sequence identity
+(6) Taxonomical information identifier, species, lineage
+
+```{r}
+cols <- c("target", "num_seqs_aligned", "unique_coverage_of_target", "target_coverage", "average_seq_identity", "taxonomy")
+
+
+uniref_read_mapping <- read_tsv("data/mmseqs/concreteMetaG_tophit_report",col_names = cols) %>% 
+  mutate(uniref100_id = str_remove(target, "UniRef100_"))
+
+
+uniref100_to_uniref90 <- uniref100_info %>% 
+  filter(uniref100_id %in% local(uniref_read_mapping$uniref100_id)) %>% 
+  left_join(uniref90_info,by = "uniref90_id") %>%
+  left_join(uniref50_info,by = "uniref50_id") %>%
+  collect()
+
+uniref_read_maping_w_annotatinos <- uniref_read_mapping %>% 
+  left_join(uniref100_to_uniref90)
+
+```
+
+
+
+
+
 

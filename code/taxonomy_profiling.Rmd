@@ -7,12 +7,13 @@ output: html_notebook
 ```{r setup, include=FALSE}
 knitr::opts_knit$set(root.dir = here::here())
 library(tidyverse)
+library(metacoder)
 ```
 
 
 Calculating what % of reads were classified by BURST alignment with SHOGUN.
 
-#Wol
+## Shogun & Wol
 ```{r}
 library(tidyverse)
  # 1.	 qseqid	 query (e.g., unknown gene) sequence id
@@ -62,7 +63,7 @@ wol_s3_summary <- s3_reads %>%
 
 ```
 
-Kraken metacodeR
+## Kraken metacodeR
 ```{r}
 bracken_raw <- read_tsv("data/braken_full_tax.tsv",col_names = c("tax","count"))
 
@@ -208,7 +209,7 @@ ggsave(plot = euk_tree,filename = "results/figures/kraken2_euk_metacoder.pdf", d
 ```
 
 
-
+## Updated Kraken using both GTDB & Refseq database
 ```{r}
 library(tidyverse)
 
@@ -230,7 +231,7 @@ tax_split <- ranks_and_num %>% filter(rank != "U") %>% pull(rank) %>% as.charact
 
 #Fill in higher level taxonomy and calculate relative abundances without sub-taxa
 kraken_gtdb <- kraken %>% separate(tax,into = tax_split,sep = "  ") %>%
-  mutate(across(everything(), ~na_if(.x,""))) %>%
+  mutate(across(where(is.character), ~na_if(.x,""))) %>%
   left_join(ranks_and_num) %>% 
   fill(any_of(tax_split)) %>% 
   mutate(taxa = row_number()) %>% 
@@ -253,50 +254,22 @@ kraken_gtdb <- kraken %>% separate(tax,into = tax_split,sep = "  ") %>%
 
 kraken <- read_tsv("data/kraken2_euk/S3_Fallen_brackenReport.txt", col_names = cols,trim_ws = F)
 
-ranks_and_num <- unique(kraken$rank) %>% 
-  data.frame(rank = .) %>% 
-  mutate(num_rank = row_number())
+tax_levels <- c("D","P","C","O","F","G","S")
 
-tax_split <- ranks_and_num %>% filter(rank != "U") %>% pull(rank) %>% as.character()
-
-#Fill in higher level taxonomy and calculate relative abundances without sub-taxa
-kraken_refseq <- kraken %>% separate(tax,into = tax_split,sep = "  ") %>%
-  mutate(across(everything(), ~na_if(.x,""))) %>%
-  left_join(ranks_and_num) %>% 
-  fill(any_of(tax_split)) %>% 
-  mutate(taxa = row_number()) %>% 
-  pivot_longer(tax_split,names_to = "row_rank",values_to = "row_tax") %>% 
-  left_join(ranks_and_num %>% rename(row_rank = "rank",row_num_rank = "num_rank")) %>% 
-  filter(row_num_rank <= num_rank) %>% 
-  pivot_wider(id_cols = c("taxa","ra_and_subs","reads_and_subs","reads","rank","NCBI_id"), names_from = "row_rank",values_from = "row_tax") %>% 
-  mutate(rel.abund = reads/sum(reads)) %>% 
-  mutate(across(c(R,D,P,C,O,F,G,S),~paste(tolower(cur_column()),.x,sep = "__")),
+refseq_kraken_from_std_tax_ranks <- read_tsv("data/kraken2_euk/S3_Fallen_brackenReport_w_standardized_lineage.txt", col_names = c(cols,"lineage","std_lineage"),trim_ws = F) %>% 
+  separate(std_lineage, into = tax_levels, remove = FALSE,sep = ";") %>% 
+  mutate(R = "r__root", 
+         D = str_replace(D, "k__", "d__"),
+         across(any_of(tax_levels), ~if_else(str_detect(.x, "^[a-z]__$"), NA, .x)),
+         rel.abund = reads / sum(reads),
          taxonomy = paste(R,D,P,C,O,F,G,S,sep = "|"),
-         taxonomy = str_remove(taxonomy,"[NA|]+$")) %>% 
-  filter(D != "d__Bacteria")
-
-
-kraken_refseq_bac <- kraken %>% separate(tax,into = tax_split,sep = "  ") %>%
-  mutate(across(everything(), ~na_if(.x,""))) %>%
-  left_join(ranks_and_num) %>% 
-  fill(any_of(tax_split)) %>% 
-  mutate(taxa = row_number()) %>% 
-  pivot_longer(tax_split,names_to = "row_rank",values_to = "row_tax") %>% 
-  left_join(ranks_and_num %>% rename(row_rank = "rank",row_num_rank = "num_rank")) %>% 
-  filter(row_num_rank <= num_rank) %>% 
-  pivot_wider(id_cols = c("taxa","ra_and_subs","reads_and_subs","reads","rank","NCBI_id"), names_from = "row_rank",values_from = "row_tax") %>% 
-  mutate(rel.abund = reads/sum(reads)) %>% 
-  mutate(across(c(R,D,P,C,O,F,G,S),~paste(tolower(cur_column()),.x,sep = "__")),
-         taxonomy = paste(R,D,P,C,O,F,G,S,sep = "|"),
-         taxonomy = str_remove(taxonomy,"[NA|]+$")) %>% 
-  filter(D == "d__Bacteria")
-
+         taxonomy = str_remove(taxonomy,"[NA|]+$"))
 
 #Combine bacteria and archaea from GTDB with other life from refseq
 
 kraken_otu <- kraken_gtdb %>% 
   select(reads, rel.abund, taxonomy) %>% 
-  bind_rows(kraken_refseq %>% 
+  bind_rows(refseq_kraken_from_std_tax_ranks %>% filter(!D %in% c("d__Archaea", "d__Bacteria")) %>% filter(!if_any(everything(), ~str_detect(.x,"\\|NA\\|"))) %>% 
               select(reads, rel.abund, taxonomy)) %>% 
   mutate(rel.abund = reads/sum(reads)) %>% 
   filter(rel.abund > 0)
@@ -326,10 +299,8 @@ kraken_otu_genus <- genus %>%
 ```
 
 
-Plot the merged table with metacodeR
+### Plot the merged table with metacodeR
 ```{r}
-library(metacoder)
-
 obj <- parse_tax_data(kraken_otu_genus, class_cols = "taxonomy", class_sep = "|",
                       class_key = c(tax_rank = "taxon_rank", tax_name = "taxon_name"),
                       class_regex = "^(.+)__(.*)$")
@@ -344,7 +315,7 @@ obj$data$tax_abund$S3 <- obj$data$tax_abund$rel.abund
 
 
 (tree <- obj %>%
-    filter_taxa(S3 > 0.001) %>%
+    filter_taxa(S3 > 0.001,supertaxa = TRUE, reassign_obs = TRUE) %>%
     heat_tree(node_label = taxon_names,
           node_size = S3,
           node_size_range = c(0.00175,0.045),
@@ -361,6 +332,114 @@ ggsave(plot = tree,filename = "results/figures/finerkraken2_gtdb_combined.pdf", 
 
 
 ```
+
+
+## UniRef LCA taxonomy report from MMseqs2
+
+
+```{r}
+cols <- c("ra_and_subs","reads_and_subs","reads","rank","NCBI_id","tax","full_lineage","lineage")
+
+mmseqs <- read_tsv("data/mmseqs/concreteMetaG_report_w_standardized_lineage", 
+                   col_names = cols,trim_ws = F)
+
+mmseqs_for_metacoder <- mmseqs %>% 
+  mutate(rel_abund = reads / sum(reads)) %>% 
+  filter(!tax %in% c("unclassified","  cellular organisms")) %>% 
+  mutate(lineage = str_glue("r__Root;{lineage}"),
+         lineage = str_remove_all(lineage, "(;[a-z]__)*$")) %>% 
+  filter(!str_detect(lineage, ";NA")) %>% 
+  select(rel_abund, lineage)
+
+obj <- parse_tax_data(mmseqs_for_metacoder, class_cols = "lineage", class_sep = ";",
+                      class_key = c(tax_rank = "taxon_rank", tax_name = "taxon_name"),
+                      class_regex = "^(.+)__(.*)$")
+
+#summing per-taxon counts
+obj$data$tax_abund <- calc_taxon_abund(obj, "tax_data")
+
+obj$data$tax_abund$S3 <- obj$data$tax_abund$rel_abund
+
+
+#All domains
+(tree <- obj %>%
+    filter_taxa(obj$data$tax_abund$rel_abund > 0.001,supertaxa = TRUE, reassign_obs = TRUE) %>%
+    heat_tree(node_label = taxon_names,
+          node_size = S3,
+          node_size_range = c(0.00175,0.045),
+          node_label_size_range = c(.015,.025),
+          node_size_axis_label = "OTU count",
+          initial_layout = "reingold-tilford", layout = "davidson-harel",
+          overlap_avoidance = 10,
+          node_label_max = 75,
+          node_color = S3,
+          node_color_range = c("gray","gray","gray"),
+          node_color_axis_label = "Relative abundance")
+)
+ggsave(plot = tree,filename = "results/figures/mmseqs2_metacoder.pdf", device = cairo_pdf, width = 12, height = 12, dpi = 600)
+
+
+
+```
+
+
+
+
+```{r}
+########
+##Read in GTDB classified report
+#######
+
+cols <- c("ra_and_subs","reads_and_subs","reads","rank","NCBI_id","tax")
+
+mmseqs <- read_tsv("data/mmseqs/concreteMetaG_report", 
+                   col_names = cols,trim_ws = F)
+
+report <- pavian::read_report("data/mmseqs/concreteMetaG_report")
+
+ranks <- report$taxRank %>% unique()
+
+ranksto_use <- c("D","K","P","C","O","F","G","S")
+
+filtered_report <- report %>% 
+  filter(taxRank %in% ranksto_use) %>% 
+  pivot_wider(names_from = taxRank, values_from = name) %>% 
+  fill(D,.direction = "down") %>%
+  group_by(D,.drop = FALSE) %>% 
+  fill(K,.direction = "down") %>%
+  group_by(K,.drop = FALSE) %>% 
+  fill(P,.direction = "down") %>%
+  group_by(P,.drop = FALSE) %>% 
+  fill(C,.direction = "down") %>%
+  group_by(C,.drop = FALSE) %>% 
+  fill(O,.direction = "down") %>%
+  group_by(O,.drop = FALSE) %>% 
+  fill(F,.direction = "down") %>%
+  group_by(F,.drop = FALSE) %>% 
+  fill(G,.direction = "down") %>%
+  group_by(G,.drop = FALSE) %>% 
+  fill(S,.direction = "down")
+
+tax_split <- ranks_and_num %>% filter(rank != "U") %>% pull(rank) %>% as.character()
+
+#Fill in higher level taxonomy and calculate relative abundances without sub-taxa
+mmseqs_parsed <- mmseqs %>% separate(tax,into = tax_split,sep = "  ") %>%
+  mutate(across(everything(), ~na_if(.x,""))) %>%
+  left_join(ranks_and_num) %>% 
+  fill(any_of(tax_split)) %>% 
+  mutate(taxa = row_number()) %>% 
+  pivot_longer(tax_split,names_to = "row_rank",values_to = "row_tax") %>% 
+  left_join(ranks_and_num %>% rename(row_rank = "rank",row_num_rank = "num_rank")) %>% 
+  filter(row_num_rank <= num_rank) %>% 
+  pivot_wider(id_cols = c("taxa","ra_and_subs","reads_and_subs","reads","rank","NCBI_id"), names_from = "row_rank",values_from = "row_tax") %>% 
+  mutate(rel.abund = reads/sum(reads)) #%>% 
+  mutate(R = paste0("r__",R),
+         taxonomy = paste(R,D,P,C,O,F,G,S,sep = "|"),
+         taxonomy = str_remove(taxonomy,"[NA|]+$"))
+
+```
+
+
 
 
 

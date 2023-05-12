@@ -1,0 +1,131 @@
+---
+title: "R Notebook"
+output: html_notebook
+---
+
+---
+title: "R Notebook"
+output: html_notebook
+---
+
+```{r setup, include=FALSE}
+knitr::opts_knit$set(root.dir = here::here())
+library(metacoder)
+library(tidyverse)
+library(furrr)
+```
+
+
+```{r}
+sourmash_res <- system("ls data/sourmash/S3_Fallen/S3_Fallen_gather_gtdbrs207_reps.with-lineages.csv", intern = TRUE) %>% 
+  data.frame(path = .) %>% 
+  mutate(sampleID = path %>% str_remove(".*/sourmash/") %>% str_remove("/.*"))
+
+read_sourmash <- function(path,sampleID) {
+  read_csv(path,col_types = paste0(rep("c",31),collapse = "")) %>% 
+    mutate(sample = sampleID)
+}
+
+sourmash_combined <- map2_df(sourmash_res$path, sourmash_res$sampleID, read_sourmash) %>% 
+  type_convert() %>% 
+  mutate(n_unique_kmers = (unique_intersect_bp / scaled) * average_abund,
+         rel_abund = n_unique_kmers / sum(n_unique_kmers))
+
+
+example <- sourmash_combined %>% 
+  mutate(accession = name %>% str_remove(" .*"),
+         genome_download_path = glue::glue("data/sourmash/{sample}/genomes/{accession}.fasta.gz"))
+
+genome_tax <- sourmash_combined %>% 
+  select(name, lineage) %>% 
+  transmute(lineage, genome = str_remove(name, " .*"))
+
+refseq <- read_tsv("data/reference/NCBI/refseq_assembly_summary.txt",skip = 1)
+
+genbank <- read_tsv("data/reference/NCBI/genbank_assembly_summary.txt", skip = 1)
+
+all_genome <- bind_rows(refseq, genbank)
+
+
+all_genome2 <- all_genome %>%
+  mutate(prefix = ftp_path %>% str_remove_all(".*/"),
+         genome_ftp = glue::glue("{ftp_path}/{prefix}_genomic.fna.gz"))
+
+sourmash_genomes <- all_genome2 %>% 
+  filter(`# assembly_accession` %in% example$accession) 
+
+get_genome <- function(accession, out_path, genomes_table){
+  if(!dir.exists(dirname(out_path))) {dir.create(dirname(out_path))}
+  link <- genomes_table %>% filter(`# assembly_accession` == accession) %>% pull("genome_ftp")
+  print(glue::glue("running: wget {link} -O {out_path}"))
+  system(glue::glue("wget {link} -O {out_path}"),ignore.stdout = TRUE,ignore.stderr = TRUE)
+}
+
+
+#get_genome("GCF_008244535.1", "~/test_genome.fasta.gz", all_genome2)
+
+map2(example$accession, example$genome_download_path, get_genome, all_genome2)
+
+```
+
+
+Read in coverage of these reference genomes produced with coverM
+```{r}
+genome_coverage <- read_tsv("data/sourmash/S3_Fallen/genome_coverage.tsv") %>% 
+  pivot_longer(-Genome, names_to = "metric", values_to = "value") %>% 
+  mutate(sample = str_remove(metric, "_R1.fastq.*"),
+         metric = str_remove(metric, ".*fastq.gz ") %>% janitor::make_clean_names(,allow_dupes = TRUE)) %>% 
+  pivot_wider(names_from = metric, values_from = value) %>% 
+  mutate(percent_of_genome_length_covered = covered_bases / length)
+
+genome_coverage_long <- genome_coverage %>% 
+  pivot_longer(-c(Genome, sample), names_to = "metric", values_to = "value")
+
+```
+
+
+Make traitar genome file
+```{r}
+
+genomes <- system("ls data/sourmash/S3_Fallen/genomes/*.fasta", intern = TRUE) %>% 
+  data.frame(genome_path = .) %>% 
+  bind_cols(unglue::unglue_data(.$genome_path, "data/sourmash/S3_Fallen/genomes/{genome}.fasta")) %>% 
+  transmute(sample_file_name = str_glue("{genome}.faa"),
+         sample_name = str_glue("{genome}"),
+         category = "S3_fallen") %>% 
+  write_tsv("data/sourmash/S3_Fallen/genomes/traitar_sample_list.tsv")
+
+```
+
+Traitar results
+```{r}
+traitar <- read_tsv("data/sourmash/S3_Fallen/genomes/traitar/predictions_majority-vote.txt") %>% 
+  rename(genome = "...1") %>% 
+  left_join(genome_tax) %>% 
+  relocate(genome, lineage) %>% 
+  `rownames<-`(.$lineage)
+
+o2_tolerance <- traitar %>% select(genome, lineage, Aerobe:Facultative) %>% 
+  pivot_longer(Aerobe:Facultative, names_to = "o2_tolerance", values_to = "bool") %>% 
+  filter(bool ==1 ) %>% 
+  left_join(genome_coverage %>% rename(genome = "Genome"))
+
+```
+
+
+
+Make list of dirs Bakta snakemake rule
+```{r}
+
+bakta_df <- genomes %>% 
+  select(genome = "sample_name") %>% 
+  transmute(bakta_dir = str_glue("data/sourmash/S3_Fallen/genomes/bakta/{genome}")) %>% 
+  write_tsv("data/sourmash/S3_Fallen/genomes/bakta_dirs.tsv")
+
+
+
+```
+
+
+
+
